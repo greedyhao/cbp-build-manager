@@ -7,34 +7,35 @@ import * as path from 'path';
 
 // Define the CBP project item class
 class CbpProjectItem extends vscode.TreeItem {
+	// Add project-specific compile commands path
+	public compileCommandsPath: string = '../../../';
+
 	constructor(
 		public readonly label: string,
 		public readonly fsPath: string,
-		public readonly collapsibleState: vscode.TreeItemCollapsibleState,
-		public checked: boolean = false
+		public readonly collapsibleState: vscode.TreeItemCollapsibleState
 	) {
 		super(label, collapsibleState);
 		this.tooltip = this.fsPath;
 		this.description = path.basename(path.dirname(this.fsPath));
-		this.checkboxState = checked ? vscode.TreeItemCheckboxState.Checked : vscode.TreeItemCheckboxState.Unchecked;
 		
-		// Add command to handle checkbox clicks
-		this.command = {
-			command: 'cbpProjects.toggleCheckbox',
-			title: 'Toggle Checkbox',
-			arguments: [this]
-		};
+		// Set initial checkbox state to unchecked
+		this.checkboxState = vscode.TreeItemCheckboxState.Unchecked;
+		
+		// Remove command to fix drag and drop conflict
+		// VS Code handles checkbox clicks automatically when checkboxState is set
 	}
 
 	// Add context value for menu contributions
 	contextValue = 'cbpProject';
 }
 
-// Define the TreeDataProvider
+// Define the TreeDataProvider with drag and drop support
 class CbpProjectsProvider implements vscode.TreeDataProvider<CbpProjectItem>, vscode.TreeDragAndDropController<CbpProjectItem> {
 	private _onDidChangeTreeData: vscode.EventEmitter<CbpProjectItem | undefined | void> = new vscode.EventEmitter<CbpProjectItem | undefined | void>();
 	readonly onDidChangeTreeData: vscode.Event<CbpProjectItem | undefined | void> = this._onDidChangeTreeData.event;
 
+	// Store projects array
 	private projects: CbpProjectItem[] = [];
 
 	// Refresh the project list
@@ -71,53 +72,79 @@ class CbpProjectsProvider implements vscode.TreeDataProvider<CbpProjectItem>, vs
 		return Promise.resolve([]);
 	}
 
-	// Handle checkbox state change
+	// Handle checkbox state change - use native checkboxState
 	toggleCheckbox(element: CbpProjectItem): void {
-		element.checked = !element.checked;
-		element.checkboxState = element.checked ? vscode.TreeItemCheckboxState.Checked : vscode.TreeItemCheckboxState.Unchecked;
+		// Toggle the native checkboxState
+		if (element.checkboxState === vscode.TreeItemCheckboxState.Checked) {
+			element.checkboxState = vscode.TreeItemCheckboxState.Unchecked;
+		} else {
+			element.checkboxState = vscode.TreeItemCheckboxState.Checked;
+		}
+		
+		// Debug: Log the change
+		console.log(`${element.label}: checkboxState changed to ${element.checkboxState}`);
+		
+		// Notify the tree view to update
 		this._onDidChangeTreeData.fire();
 	}
 
-	// Drag and drop functionality
+	// Update compile commands path for a project
+	updateCompileCommandsPath(element: CbpProjectItem, newPath: string): void {
+		element.compileCommandsPath = newPath;
+		this._onDidChangeTreeData.fire();
+	}
+
+	// Drag and drop configuration - simplified for compatibility
 	dropMimeTypes = ['application/vnd.code.tree.cbpProjects'];
 	dragMimeTypes = ['application/vnd.code.tree.cbpProjects'];
 
+	// Handle drag operation
 	handleDrag?(source: CbpProjectItem[], treeDataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): void {
 		treeDataTransfer.set('application/vnd.code.tree.cbpProjects', new vscode.DataTransferItem(source));
 	}
 
+	// Handle drop operation - main drop logic
 	handleDrop?(target: CbpProjectItem | undefined, treeDataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): void {
-		const source = treeDataTransfer.get('application/vnd.code.tree.cbpProjects')?.value as CbpProjectItem[];
-		if (!source || source.length === 0) {
+		const sourceItems = treeDataTransfer.get('application/vnd.code.tree.cbpProjects')?.value as CbpProjectItem[];
+		if (!sourceItems || sourceItems.length === 0) {
 			return;
 		}
 
-		const draggedItem = source[0];
+		const draggedItem = sourceItems[0];
 		const sourceIndex = this.projects.indexOf(draggedItem);
 		if (sourceIndex === -1) {
 			return;
 		}
 
-		// Remove the dragged item
+		// Remove the dragged item from current position
 		this.projects.splice(sourceIndex, 1);
 
-		// Insert at the new position
+		// Calculate new position
 		if (!target) {
 			// Drop at the end
 			this.projects.push(draggedItem);
 		} else {
 			const targetIndex = this.projects.indexOf(target);
 			if (targetIndex !== -1) {
+				// Insert before target
 				this.projects.splice(targetIndex, 0, draggedItem);
 			}
 		}
 
+		// Notify tree view to refresh
 		this._onDidChangeTreeData.fire();
 	}
 
-	// Get selected projects in order
+	// Get selected projects in order - use checkboxState directly
 	getSelectedProjects(): CbpProjectItem[] {
-		return this.projects.filter(project => project.checked);
+		return this.projects.filter(project => 
+			project.checkboxState === vscode.TreeItemCheckboxState.Checked
+		);
+	}
+
+	// Get all projects (for debugging)
+	getProjects(): CbpProjectItem[] {
+		return this.projects;
 	}
 }
 
@@ -151,18 +178,47 @@ export function activate(context: vscode.ExtensionContext) {
 		canSelectMany: true
 	});
 
+	// Function to get configuration settings
+	function getConfig() {
+		return vscode.workspace.getConfiguration('cbpBuildManager');
+	}
+
+	// Function to substitute variables in command templates
+	function substituteVariables(command: string, substitutions: Record<string, string>): string {
+		return command.replace(/\{([^}]+)\}/g, (match, key) => {
+			return substitutions[key] || match;
+		});
+	}
+
 	// Register commands
 	const buildCommand = vscode.commands.registerCommand('cbp-build-manager.buildSelected', async () => {
+		outputChannel.clear();
+		outputChannel.show();
+		
+		// Debug: Log all projects and their checkbox state
+		outputChannel.appendLine('=== DEBUG: Project Checkbox State ===');
+		// Use a public method to get projects for debugging
+		const allProjects = projectsProvider.getProjects();
+		allProjects.forEach(project => {
+			outputChannel.appendLine(`${project.label}: checkboxState=${project.checkboxState}`);
+		});
+		
 		const selectedProjects = projectsProvider.getSelectedProjects();
+		outputChannel.appendLine(`=== DEBUG: Selected Projects Count ===`);
+		outputChannel.appendLine(`Found ${selectedProjects.length} selected projects`);
+		
 		if (selectedProjects.length === 0) {
 			vscode.window.showInformationMessage('No projects selected for building.');
 			return;
 		}
 
-		outputChannel.clear();
-		outputChannel.show();
+		// Get global configuration
+		const config = getConfig();
+		const cbp2clangPath = config.get<string>('cbp2clangPath', 'cbp2clang');
+		const convertCommandTemplate = config.get<string>('convertCommand', '{cbp2clang} {cbpFile} {compileCommands} -l ld');
+		const buildCommand = config.get<string>('buildCommand', './build.bat');
 
-		// Create terminal for Ninja output
+		// Create terminal for output
 		const terminal = vscode.window.createTerminal('CBP Build');
 		terminal.show();
 
@@ -170,16 +226,35 @@ export function activate(context: vscode.ExtensionContext) {
 			outputChannel.appendLine(`=== Processing project: ${project.label} ===`);
 			
 			try {
-				// Step 1: Generate Ninja file (placeholder for actual converter call)
 				const projectDir = path.dirname(project.fsPath);
-				const ninjaPath = path.join(projectDir, 'build.ninja');
 				
-				// TODO: Replace with actual converter command
-				// await runCommand(`cbp2ninja "${project.fsPath}" --out "${ninjaPath}"`, outputChannel);
-				outputChannel.appendLine(`Generated Ninja file: ${ninjaPath}`);
+				// Step 1: Convert CBP to compile_commands.json
+				outputChannel.appendLine('Step 1: Converting CBP to compile_commands.json...');
 				
-				// Step 2: Run Ninja build
-				terminal.sendText(`cd "${projectDir}" && ninja -f "${ninjaPath}"`);
+				// Prepare substitution variables - use project-specific compileCommandsPath
+				const substitutions = {
+					cbp2clang: cbp2clangPath,
+					cbpFile: project.fsPath,
+					compileCommands: project.compileCommandsPath
+				};
+				
+				// Generate the actual convert command
+				const convertCommand = substituteVariables(convertCommandTemplate, substitutions);
+				outputChannel.appendLine(`Running: ${convertCommand}`);
+				outputChannel.appendLine(`Compile commands path: ${project.compileCommandsPath}`);
+				
+				// Run convert command
+				await runCommand(convertCommand, outputChannel);
+				
+				// Step 2: Run the build script
+				outputChannel.appendLine('Step 2: Running build script...');
+				outputChannel.appendLine(`Running build script in project directory: ${buildCommand}`);
+				
+				// Ensure build.bat runs in the same directory as the .cbp file
+				// Use separate commands for compatibility with both PowerShell and cmd
+				terminal.sendText(`pushd "${projectDir}"`);
+				terminal.sendText(buildCommand);
+				terminal.sendText('popd');
 				
 			} catch (error) {
 				outputChannel.appendLine(`Error processing project ${project.label}: ${error}`);
@@ -197,10 +272,30 @@ export function activate(context: vscode.ExtensionContext) {
 		projectsProvider.toggleCheckbox(item);
 	});
 
+	// Set compile commands path for a project
+	const setCompileCommandsPathCommand = vscode.commands.registerCommand('cbp-build-manager.setCompileCommandsPath', async (item: CbpProjectItem) => {
+		// Get current value as default
+		const currentPath = item.compileCommandsPath;
+		
+		// Show input box for new path
+		const newPath = await vscode.window.showInputBox({
+			title: 'Set Compile Commands Path',
+			value: currentPath,
+			placeHolder: '../../../',
+			prompt: 'Enter relative path to output compile_commands.json (relative to .cbp file)'
+		});
+		
+		if (newPath) {
+			projectsProvider.updateCompileCommandsPath(item, newPath);
+			outputChannel.appendLine(`Updated compile commands path for ${item.label}: ${newPath}`);
+		}
+	});
+
 	// Add subscriptions
 	context.subscriptions.push(
 		buildCommand,
 		refreshCommand,
+		setCompileCommandsPathCommand,
 		treeView,
 		outputChannel
 	);
