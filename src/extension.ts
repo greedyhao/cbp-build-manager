@@ -148,17 +148,125 @@ class CbpProjectsProvider implements vscode.TreeDataProvider<CbpProjectItem>, vs
 	}
 }
 
-// Run command with output to channel
+// Helper function to decode buffer with multiple encoding attempts
+function decodeBuffer(buffer: Buffer): string {
+	const iconv = require('iconv-lite');
+	try {
+		return iconv.decode(buffer, 'gbk');
+	} catch {
+		try {
+			return iconv.decode(buffer, 'utf8');
+		} catch {
+			return buffer.toString('utf8');
+		}
+	}
+}
+
+// Run command with real-time output to channel
 function runCommand(cmd: string, output: vscode.OutputChannel): Promise<void> {
 	return new Promise((resolve, reject) => {
-		cp.exec(cmd, (err, stdout, stderr) => {
-			if (err) {
-				output.append(stderr);
-				reject(err);
-			} else {
-				output.append(stdout);
+		const options: cp.SpawnOptions = {
+			windowsHide: true,
+			shell: process.platform === 'win32' ? 'cmd.exe' : undefined,
+			stdio: ['pipe', 'pipe', 'pipe'], // 确保使用管道模式，支持实时输出
+			env: { ...process.env, PYTHONUNBUFFERED: '1' } // 添加环境变量禁用缓冲
+		};
+
+		// 使用spawn执行命令，支持实时输出
+		// 在Windows上，使用/c选项并添加@echo off和其他命令来确保实时输出
+		const child = cp.spawn(
+			process.platform === 'win32' ? 'cmd.exe' : cmd,
+			process.platform === 'win32' ? ['/c', 'echo off && ' + cmd] : [],
+			options
+		);
+
+		// 实时处理标准输出（添加null检查）
+		if (child.stdout) {
+			child.stdout.on('data', (data: Buffer) => {
+				const decodedOutput = decodeBuffer(data);
+				output.append(decodedOutput);
+			});
+		}
+
+		// 实时处理错误输出（添加null检查）
+		if (child.stderr) {
+			child.stderr.on('data', (data: Buffer) => {
+				const decodedError = decodeBuffer(data);
+				output.append(decodedError);
+			});
+		}
+
+		// 处理命令完成
+		child.on('close', (code: number) => {
+			if (code === 0) {
 				resolve();
+			} else {
+				reject(new Error(`Command failed with exit code ${code}`));
 			}
+		});
+
+		// 处理命令错误
+		child.on('error', (err: Error) => {
+			reject(err);
+		});
+	});
+}
+
+// Run command in specific directory with real-time output to channel
+function runCommandInDirectory(cmd: string, cwd: string, output: vscode.OutputChannel): Promise<void> {
+	return new Promise((resolve, reject) => {
+		// 仅转换路径格式
+		let actualCmd = cmd;
+		if (process.platform === 'win32') {
+			if (cmd.startsWith('./')) {
+				actualCmd = cmd.replace('./', '.\\');
+			}
+		}
+
+		const options: cp.SpawnOptions = {
+			cwd,
+			windowsHide: true,
+			shell: process.platform === 'win32' ? 'cmd.exe' : undefined,
+			stdio: ['pipe', 'pipe', 'pipe'], // 确保使用管道模式，支持实时输出
+			env: { ...process.env, PYTHONUNBUFFERED: '1' } // 添加环境变量禁用缓冲
+		};
+
+		// 使用spawn执行命令，支持实时输出
+		// 在Windows上，使用/c选项并添加@echo off和其他命令来确保实时输出
+		const child = cp.spawn(
+			process.platform === 'win32' ? 'cmd.exe' : actualCmd,
+			process.platform === 'win32' ? ['/c', 'echo off && ' + actualCmd] : [],
+			options
+		);
+
+		// 实时处理标准输出（添加null检查）
+		if (child.stdout) {
+			child.stdout.on('data', (data: Buffer) => {
+				const decodedOutput = decodeBuffer(data);
+				output.append(decodedOutput);
+			});
+		}
+
+		// 实时处理错误输出（添加null检查）
+		if (child.stderr) {
+			child.stderr.on('data', (data: Buffer) => {
+				const decodedError = decodeBuffer(data);
+				output.append(decodedError);
+			});
+		}
+
+		// 处理命令完成
+		child.on('close', (code: number) => {
+			if (code === 0) {
+				resolve();
+			} else {
+				reject(new Error(`Command failed with exit code ${code}`));
+			}
+		});
+
+		// 处理命令错误
+		child.on('error', (err: Error) => {
+			reject(err);
 		});
 	});
 }
@@ -218,10 +326,6 @@ export function activate(context: vscode.ExtensionContext) {
 		const convertCommandTemplate = config.get<string>('convertCommand', '{cbp2clang} {cbpFile} {compileCommands} -l ld');
 		const buildCommand = config.get<string>('buildCommand', './build.bat');
 
-		// Create terminal for output
-		const terminal = vscode.window.createTerminal('CBP 构建');
-		terminal.show();
-
 		for (const project of selectedProjects) {
 			outputChannel.appendLine(`=== 正在处理项目: ${project.label} ===`);
 			
@@ -249,12 +353,9 @@ export function activate(context: vscode.ExtensionContext) {
 				// 步骤 2: 运行构建脚本
 				outputChannel.appendLine('步骤 2: 正在运行构建脚本...');
 				outputChannel.appendLine(`正在项目目录中运行构建脚本: ${buildCommand}`);
-				
-				// Ensure build.bat runs in the same directory as the .cbp file
-				// Use separate commands for compatibility with both PowerShell and cmd
-				terminal.sendText(`pushd "${projectDir}"`);
-				terminal.sendText(buildCommand);
-				terminal.sendText('popd');
+
+				// 使用 child_process.exec 在项目目录下运行构建命令
+				await runCommandInDirectory(buildCommand, projectDir, outputChannel);
 				
 			} catch (error) {
 				outputChannel.appendLine(`处理项目 ${project.label} 时出错: ${error}`);
