@@ -204,11 +204,11 @@ export function activate(context: vscode.ExtensionContext) {
 		});
 		
 		const selectedProjects = projectsProvider.getSelectedProjects();
-		outputChannel.appendLine(`=== DEBUG: Selected Projects Count ===`);
-		outputChannel.appendLine(`Found ${selectedProjects.length} selected projects`);
+		outputChannel.appendLine(`=== 调试: 选中项目数量 ===`);
+		outputChannel.appendLine(`找到 ${selectedProjects.length} 个选中项目`);
 		
 		if (selectedProjects.length === 0) {
-			vscode.window.showInformationMessage('No projects selected for building.');
+			vscode.window.showInformationMessage('没有选中要构建的项目。');
 			return;
 		}
 
@@ -219,36 +219,36 @@ export function activate(context: vscode.ExtensionContext) {
 		const buildCommand = config.get<string>('buildCommand', './build.bat');
 
 		// Create terminal for output
-		const terminal = vscode.window.createTerminal('CBP Build');
+		const terminal = vscode.window.createTerminal('CBP 构建');
 		terminal.show();
 
 		for (const project of selectedProjects) {
-			outputChannel.appendLine(`=== Processing project: ${project.label} ===`);
+			outputChannel.appendLine(`=== 正在处理项目: ${project.label} ===`);
 			
 			try {
 				const projectDir = path.dirname(project.fsPath);
 				
-				// Step 1: Convert CBP to compile_commands.json
-				outputChannel.appendLine('Step 1: Converting CBP to compile_commands.json...');
+				// 步骤 1: 将 CBP 转换为 compile_commands.json
+				outputChannel.appendLine('步骤 1: 正在将 CBP 转换为 compile_commands.json...');
 				
-				// Prepare substitution variables - use project-specific compileCommandsPath
+				// 准备替换变量 - 使用项目特定的 compileCommandsPath
 				const substitutions = {
 					cbp2clang: cbp2clangPath,
 					cbpFile: project.fsPath,
 					compileCommands: project.compileCommandsPath
 				};
 				
-				// Generate the actual convert command
+				// 生成实际的转换命令
 				const convertCommand = substituteVariables(convertCommandTemplate, substitutions);
-				outputChannel.appendLine(`Running: ${convertCommand}`);
-				outputChannel.appendLine(`Compile commands path: ${project.compileCommandsPath}`);
+				outputChannel.appendLine(`正在运行: ${convertCommand}`);
+				outputChannel.appendLine(`编译命令路径: ${project.compileCommandsPath}`);
 				
-				// Run convert command
+				// 运行转换命令
 				await runCommand(convertCommand, outputChannel);
 				
-				// Step 2: Run the build script
-				outputChannel.appendLine('Step 2: Running build script...');
-				outputChannel.appendLine(`Running build script in project directory: ${buildCommand}`);
+				// 步骤 2: 运行构建脚本
+				outputChannel.appendLine('步骤 2: 正在运行构建脚本...');
+				outputChannel.appendLine(`正在项目目录中运行构建脚本: ${buildCommand}`);
 				
 				// Ensure build.bat runs in the same directory as the .cbp file
 				// Use separate commands for compatibility with both PowerShell and cmd
@@ -257,7 +257,7 @@ export function activate(context: vscode.ExtensionContext) {
 				terminal.sendText('popd');
 				
 			} catch (error) {
-				outputChannel.appendLine(`Error processing project ${project.label}: ${error}`);
+				outputChannel.appendLine(`处理项目 ${project.label} 时出错: ${error}`);
 				continue;
 			}
 		}
@@ -279,15 +279,15 @@ export function activate(context: vscode.ExtensionContext) {
 		
 		// Show input box for new path
 		const newPath = await vscode.window.showInputBox({
-			title: 'Set Compile Commands Path',
+			title: '设置编译命令路径',
 			value: currentPath,
 			placeHolder: '../../../',
-			prompt: 'Enter relative path to output compile_commands.json (relative to .cbp file)'
+			prompt: '输入 compile_commands.json 的相对输出路径（相对于 .cbp 文件）'
 		});
 		
 		if (newPath) {
 			projectsProvider.updateCompileCommandsPath(item, newPath);
-			outputChannel.appendLine(`Updated compile commands path for ${item.label}: ${newPath}`);
+			outputChannel.appendLine(`已更新项目 ${item.label} 的编译命令路径: ${newPath}`);
 		}
 	});
 
