@@ -4,7 +4,14 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
-## [Unreleased]
+## [0.0.2] - 2025-12-16
+
+### Added
+- 改进命令执行功能以支持实时输出和编码处理
+- 增强项目树显示功能并持久化编译命令路径
+
+### Fixed
+- 修正命令分组以正确显示在视图标题中
 
 ## [0.0.1] - 2025-12-16
 
