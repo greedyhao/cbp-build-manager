@@ -16,7 +16,7 @@ class CbpProjectItem extends vscode.TreeItem {
 		public readonly collapsibleState: vscode.TreeItemCollapsibleState
 	) {
 		super(label, collapsibleState);
-		this.tooltip = this.fsPath;
+		this.tooltip = `${this.label}\n${this.fsPath}\n编译命令路径: ${this.compileCommandsPath}`;
 		this.description = path.basename(path.dirname(this.fsPath));
 		
 		// Set initial checkbox state to unchecked
@@ -37,6 +37,9 @@ class CbpProjectsProvider implements vscode.TreeDataProvider<CbpProjectItem>, vs
 
 	// Store projects array
 	private projects: CbpProjectItem[] = [];
+	
+	// Store compile commands paths persistently
+	private compileCommandsPaths: Map<string, string> = new Map();
 
 	// Refresh the project list
 	async refresh(): Promise<void> {
@@ -52,16 +55,35 @@ class CbpProjectsProvider implements vscode.TreeDataProvider<CbpProjectItem>, vs
 		}
 
 		const cbpFiles = await vscode.workspace.findFiles('**/*.cbp');
-		this.projects = cbpFiles.map(file => new CbpProjectItem(
-			path.basename(file.fsPath, '.cbp'),
-			file.fsPath,
-			vscode.TreeItemCollapsibleState.None
-		));
+		this.projects = cbpFiles.map(file => {
+			const item = new CbpProjectItem(
+				path.basename(file.fsPath, '.cbp'),
+				file.fsPath,
+				vscode.TreeItemCollapsibleState.None
+			);
+			// Restore saved compile commands path if exists
+			if (this.compileCommandsPaths.has(file.fsPath)) {
+				item.compileCommandsPath = this.compileCommandsPaths.get(file.fsPath)!;
+				item.tooltip = `${item.label}\n${item.fsPath}\n编译命令路径: ${item.compileCommandsPath}`;
+			}
+			return item;
+		});
 	}
 
-	// Get tree item
+	// Get tree item with enhanced visual style
 	getTreeItem(element: CbpProjectItem): vscode.TreeItem {
-		return element;
+		// Create a copy of the element to enhance visual style
+		const treeItem = element;
+		
+		// Add icon based on checkbox state
+		treeItem.iconPath = treeItem.checkboxState === vscode.TreeItemCheckboxState.Checked 
+			? new vscode.ThemeIcon('checklist-unchecked') 
+			: new vscode.ThemeIcon('checklist');
+		
+		// Show compile commands path in description for better visibility
+		treeItem.description = `${path.basename(path.dirname(treeItem.fsPath))} • ${treeItem.compileCommandsPath}`;
+		
+		return treeItem;
 	}
 
 	// Get children
@@ -91,6 +113,10 @@ class CbpProjectsProvider implements vscode.TreeDataProvider<CbpProjectItem>, vs
 	// Update compile commands path for a project
 	updateCompileCommandsPath(element: CbpProjectItem, newPath: string): void {
 		element.compileCommandsPath = newPath;
+		// Save to persistent storage
+		this.compileCommandsPaths.set(element.fsPath, newPath);
+		// Update tooltip to show new compile commands path
+		element.tooltip = `${element.label}\n${element.fsPath}\n编译命令路径: ${element.compileCommandsPath}`;
 		this._onDidChangeTreeData.fire();
 	}
 
@@ -278,6 +304,15 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Create tree data provider
 	const projectsProvider = new CbpProjectsProvider();
+	
+	// Load saved compile commands paths from extension context
+	const savedPaths = context.globalState.get<Record<string, string>>('compileCommandsPaths');
+	if (savedPaths) {
+		// Convert saved paths to Map
+		for (const [fsPath, compilePath] of Object.entries(savedPaths)) {
+			(projectsProvider as any).compileCommandsPaths.set(fsPath, compilePath);
+		}
+	}
 
 	// Register tree view
 	const treeView = vscode.window.createTreeView('cbpProjects', {
@@ -377,18 +412,38 @@ export function activate(context: vscode.ExtensionContext) {
 	const setCompileCommandsPathCommand = vscode.commands.registerCommand('cbp-build-manager.setCompileCommandsPath', async (item: CbpProjectItem) => {
 		// Get current value as default
 		const currentPath = item.compileCommandsPath;
+		// Get global default from config
+		const config = getConfig();
+		const globalDefault = config.get<string>('compileCommandsPath', '../../../');
 		
-		// Show input box for new path
+		// Show input box for new path with better UI
 		const newPath = await vscode.window.showInputBox({
-			title: '设置编译命令路径',
+			title: `设置项目 ${item.label} 的编译命令路径`,
 			value: currentPath,
-			placeHolder: '../../../',
-			prompt: '输入 compile_commands.json 的相对输出路径（相对于 .cbp 文件）'
+			placeHolder: globalDefault,
+			prompt: `输入 compile_commands.json 的相对输出路径（相对于 .cbp 文件）\n全局默认值: ${globalDefault}\n当前值: ${currentPath}`,
+			validateInput: (value) => {
+				if (!value) {
+					return '路径不能为空';
+				}
+				return null;
+			}
 		});
 		
 		if (newPath) {
 			projectsProvider.updateCompileCommandsPath(item, newPath);
 			outputChannel.appendLine(`已更新项目 ${item.label} 的编译命令路径: ${newPath}`);
+			vscode.window.showInformationMessage(`已更新项目 ${item.label} 的编译命令路径`);
+			
+			// Save to extension context for persistence
+			const currentPaths = (projectsProvider as any).compileCommandsPaths;
+			// Convert Map to object for storage
+			const pathsObject: Record<string, string> = {};
+			currentPaths.forEach((path: string, fsPath: string) => {
+				pathsObject[fsPath] = path;
+			});
+			// Save to global state
+			context.globalState.update('compileCommandsPaths', pathsObject);
 		}
 	});
 
