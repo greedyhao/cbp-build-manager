@@ -55,12 +55,12 @@
       "view/title": [
         {
           "command": "cbp-build-manager.buildSelected",
-          "group": "navigation",
+          "group": "navigation@1",
           "when": "view == cbpProjects"
         },
         {
           "command": "cbp-build-manager.refreshProjects",
-          "group": "navigation",
+          "group": "navigation@2",
           "when": "view == cbpProjects"
         }
       ],
