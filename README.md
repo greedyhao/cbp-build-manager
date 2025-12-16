@@ -1,6 +1,6 @@
-# CBP Build Manager
+# CBP 构建管理器
 
-一个用于管理和构建 Code::Blocks 项目（.cbp 文件）的 VS Code 扩展，使用 cbp2clang 和自定义构建脚本。
+一个用于管理和构建 Code::Blocks 项目（.cbp 文件）的 VS Code 扩展，使用 [cbp2clang](https://github.com/greedyhao/cbp2clangd) 和自定义构建脚本。
 
 ## 功能特性
 
@@ -38,7 +38,7 @@
 
 | 设置项 | 默认值 | 描述 |
 |--------|--------|------|
-| `cbpBuildManager.cbp2clangPath` | `cbp2clang` | cbp2clang 可执行文件的路径 |
+| `cbpBuildManager.cbp2clangPath` | `cbp2clang` | cbp2clang 可执行文件的路径，可从 [GitHub](https://github.com/greedyhao/cbp2clangd) 下载 |
 | `cbpBuildManager.compileCommandsPath` | `../../../` | compile_commands.json 的默认相对路径（相对于 .cbp 文件） |
 | `cbpBuildManager.convertCommand` | `{cbp2clang} {cbpFile} {compileCommands} -l ld` | 转换命令的模板 |
 | `cbpBuildManager.buildCommand` | `./build.bat` | 运行构建脚本的命令 |

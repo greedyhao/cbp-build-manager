@@ -78,7 +78,7 @@
         "cbpBuildManager.cbp2clangPath": {
           "type": "string",
           "default": "cbp2clang",
-          "description": "cbp2clang 可执行文件的路径"
+          "description": "cbp2clang 可执行文件的路径，可从 https://github.com/greedyhao/cbp2clangd 下载"
         },
         "cbpBuildManager.compileCommandsPath": {
           "type": "string",
