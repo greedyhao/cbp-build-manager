@@ -116,37 +116,103 @@
 
 ### 前提条件
 
-- Node.js 18.x 或更高版本
-- pnpm 包管理器
-- VS Code 1.64.0 或更高版本
+- **Node.js 18.x 或更高版本**：用于运行 JavaScript/TypeScript 代码
+- **pnpm 包管理器**：用于管理项目依赖
+- **VS Code 1.64.0 或更高版本**：用于开发和测试扩展
+- **Git**：用于版本控制
 
-### 开发命令
+### 编译环境准备
 
-```bash
-# 安装依赖
-pnpm install
+1. **克隆仓库**
+   ```bash
+   git clone https://github.com/yourusername/cbp-build-manager.git
+   cd cbp-build-manager
+   ```
 
-# 编译扩展
-pnpm run compile
+2. **安装项目依赖**
+   ```bash
+   pnpm install
+   ```
 
-# 运行测试
-pnpm run test
+3. **安装 VSCE 工具**（用于生成 VSIX 包）
+   ```bash
+   pnpm add -D @vscode/vsce
+   ```
 
-# 生成 VSIX 包
-vsce package
-```
+### 编译扩展
+
+#### 开发模式编译
+- **单次编译**：
+  ```bash
+  pnpm run compile
+  ```
+  该命令会执行：
+  - 类型检查 (`tsc --noEmit`)
+  - 代码 lint 检查 (`eslint src`)
+  - 使用 esbuild 编译扩展 (`node esbuild.js`)
+
+- **监听模式编译**（开发时推荐）：
+  ```bash
+  pnpm run watch
+  ```
+  该命令会：
+  - 启动 esbuild 监听模式，自动编译代码变更
+  - 启动 TypeScript 类型检查监听
+
+#### 生产模式编译
+- **生产编译**：
+  ```bash
+  pnpm run package
+  ```
+  该命令会执行：
+  - 类型检查 (`tsc --noEmit`)
+  - 代码 lint 检查 (`eslint src`)
+  - 使用 esbuild 生产模式编译（压缩代码，无 sourcemap）
+
+### 打包 VSIX 扩展包
+
+1. **确保生产编译完成**
+   ```bash
+   pnpm run package
+   ```
+
+2. **生成 VSIX 包**
+   ```bash
+   pnpm exec vsce package
+   ```
+
+3. **输出文件**
+   - 生成的 VSIX 文件位于项目根目录：`cbp-build-manager-0.0.1.vsix`
+   - 可直接安装到 VS Code 中使用
+
+### 开发测试
+
+- **运行测试**：
+  ```bash
+  pnpm run test
+  ```
+
+- **在 VS Code 中调试**：
+  1. 按 `F5` 或点击 "Run and Debug" 面板中的 "Run Extension" 按钮
+  2. VS Code 会启动一个新的实例，加载你的扩展
+  3. 可以在原 VS Code 实例中设置断点、查看日志
 
 ### 项目结构
 
 ```
 cbp-build-manager/
-├── src/
+├── src/                      # 源代码目录
 │   ├── extension.ts          # 主扩展代码
 │   └── test/                 # 测试文件
-├── package.json              # 扩展配置
+├── dist/                     # 编译输出目录
+│   └── extension.js          # 编译后的扩展代码
+├── resources/                # 资源文件
+│   └── icon.svg              # 扩展图标
+├── package.json              # 扩展配置和依赖
 ├── tsconfig.json             # TypeScript 配置
-├── esbuild.js                # 构建脚本
-└── README.md                 # 此文件
+├── esbuild.js                # esbuild 构建脚本
+├── .vscodeignore             # VSIX 打包忽略文件配置
+└── README.md                 # 项目说明文档
 ```
 
 ## 贡献指南
