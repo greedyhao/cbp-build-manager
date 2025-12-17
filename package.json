@@ -14,7 +14,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/cbp-build-manager.git"
+    "url": "https://github.com/greedyhao/cbp-build-manager.git"
   },
   "main": "./dist/extension.js",
   "contributes": {
@@ -82,7 +82,7 @@
         },
         "cbpBuildManager.compileCommandsPath": {
           "type": "string",
-          "default": "../../../",
+          "default": ".",
           "description": "compile_commands.json 的相对输出路径（相对于 .cbp 文件）"
         },
         "cbpBuildManager.convertCommand": {

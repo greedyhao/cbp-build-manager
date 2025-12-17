@@ -39,7 +39,7 @@
 | 设置项 | 默认值 | 描述 |
 |--------|--------|------|
 | `cbpBuildManager.cbp2clangPath` | `cbp2clang` | cbp2clang 可执行文件的路径，可从 [GitHub](https://github.com/greedyhao/cbp2clangd) 下载 |
-| `cbpBuildManager.compileCommandsPath` | `../../../` | compile_commands.json 的默认相对路径（相对于 .cbp 文件） |
+| `cbpBuildManager.compileCommandsPath` | `.` | compile_commands.json 的默认相对路径（相对于 .cbp 文件） |
 | `cbpBuildManager.convertCommand` | `{cbp2clang} {cbpFile} {compileCommands} -l ld` | 转换命令的模板 |
 | `cbpBuildManager.buildCommand` | `./build.bat` | 运行构建脚本的命令 |
 
@@ -86,19 +86,12 @@
 ```
 对于每个选中的项目：
 1. pushd "项目目录"
-2. cbp2clang app.cbp ../../../ -l ld
+2. cbp2clang app.cbp . -l ld
 3. ./build.bat
 4. popd
 ```
 
 ## 故障排除
-
-### "No projects selected for building" 错误
-
-1. **检查调试日志**：查看 "CBP Build Manager" 输出面板中的调试信息
-2. **验证选择**：确保至少选中了一个项目的复选框
-3. **刷新项目**：点击刷新按钮重新扫描项目
-4. **检查 VS Code 版本**：确保使用的是 VS Code 1.64.0 或更高版本
 
 ### 构建脚本问题
 
@@ -125,7 +118,7 @@
 
 1. **克隆仓库**
    ```bash
-   git clone https://github.com/yourusername/cbp-build-manager.git
+   git clone https://github.com/greedyhao/cbp-build-manager.git
    cd cbp-build-manager
    ```
 
