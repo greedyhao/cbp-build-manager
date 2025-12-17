@@ -8,7 +8,7 @@ import * as path from 'path';
 // Define the CBP project item class
 class CbpProjectItem extends vscode.TreeItem {
 	// Add project-specific compile commands path
-	public compileCommandsPath: string = '../../../';
+	public compileCommandsPath: string = '.';
 
 	constructor(
 		public readonly label: string,
@@ -360,6 +360,8 @@ export function activate(context: vscode.ExtensionContext) {
 		const cbp2clangPath = config.get<string>('cbp2clangPath', 'cbp2clang');
 		const convertCommandTemplate = config.get<string>('convertCommand', '{cbp2clang} {cbpFile} {compileCommands} -l ld');
 		const buildCommand = config.get<string>('buildCommand', './build.bat');
+		const ninjaPath = config.get<string>('ninjaPath', '');
+
 
 		for (const project of selectedProjects) {
 			outputChannel.appendLine(`=== 正在处理项目: ${project.label} ===`);
@@ -378,12 +380,19 @@ export function activate(context: vscode.ExtensionContext) {
 				};
 				
 				// 生成实际的转换命令
-				const convertCommand = substituteVariables(convertCommandTemplate, substitutions);
-				outputChannel.appendLine(`正在运行: ${convertCommand}`);
-				outputChannel.appendLine(`编译命令路径: ${project.compileCommandsPath}`);
-				
-				// 运行转换命令
-				await runCommand(convertCommand, outputChannel);
+			let convertCommand = substituteVariables(convertCommandTemplate, substitutions);
+			
+			// 如果配置了ninja路径，添加--ninja参数
+			if (ninjaPath) {
+				convertCommand += ` --ninja "${ninjaPath}"`;
+				outputChannel.appendLine(`使用自定义ninja路径: ${ninjaPath}`);
+			}
+			
+			outputChannel.appendLine(`正在运行: ${convertCommand}`);
+			outputChannel.appendLine(`编译命令路径: ${project.compileCommandsPath}`);
+			
+			// 运行转换命令
+			await runCommand(convertCommand, outputChannel);
 				
 				// 步骤 2: 运行构建脚本
 				outputChannel.appendLine('步骤 2: 正在运行构建脚本...');
@@ -414,7 +423,7 @@ export function activate(context: vscode.ExtensionContext) {
 		const currentPath = item.compileCommandsPath;
 		// Get global default from config
 		const config = getConfig();
-		const globalDefault = config.get<string>('compileCommandsPath', '../../../');
+		const globalDefault = config.get<string>('compileCommandsPath', '.');
 		
 		// Show input box for new path with better UI
 		const newPath = await vscode.window.showInputBox({
