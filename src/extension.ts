@@ -178,17 +178,14 @@ class CbpProjectsProvider implements vscode.TreeDataProvider<CbpProjectItem>, vs
             treeDataTransfer.set(CBP_MIME_TYPE, new vscode.DataTransferItem(source[0].fsPath));
         }
     }
-// Handle drop operation
-    async handleDrop(target: CbpProjectItem | undefined, treeDataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): Promise<void> {
+
+	async handleDrop(target: CbpProjectItem | undefined, treeDataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): Promise<void> {
         const transferItem = treeDataTransfer.get(CBP_MIME_TYPE);
         if (!transferItem) {
             return;
         }
 
-        // 获取拖拽项的 fsPath
         const draggedFsPath = transferItem.value as string;
-        
-        // 1. 在所有项目中找到原始对象引用
         const allProjects = [...this.compiledProjects, ...this.uncompiledProjects];
         const draggedItem = allProjects.find(p => p.fsPath === draggedFsPath);
         
@@ -196,29 +193,27 @@ class CbpProjectsProvider implements vscode.TreeDataProvider<CbpProjectItem>, vs
             return;
         }
 
-        // 2. 确定拖拽项当前属于哪个列表
+        // 确定来源
         const isFromCompiled = this.compiledProjects.some(p => p.fsPath === draggedFsPath);
-        const isFromUncompiled = this.uncompiledProjects.some(p => p.fsPath === draggedFsPath);
 
-        // 3. 确定目标列表的属性
+        // --- 核心修复逻辑开始 ---
         let targetIsCompiled: boolean;
 
         if (target) {
-            // 如果落点在一个具体的项目上，根据该项目的归属决定目标列表
+            // 如果落点在具体项目上，则目标列表由该项目决定
             targetIsCompiled = this.compiledProjects.some(p => p.fsPath === target.fsPath);
         } else {
-            // 如果落点在空白处（没有 target），则假设移动到“另一个”列表
-            // 这是跨视图拖拽到空列表时的常用逻辑
-            targetIsCompiled = !isFromCompiled;
+            // 【修改点】：如果落点在空白处，保持它原来的归属状态，这样它就会飞到当前表的末尾
+            // 而不是取反 (!isFromCompiled)
+            targetIsCompiled = isFromCompiled; 
         }
+        // --- 核心修复逻辑结束 ---
 
-        // 如果目标和来源相同且没有位置变化需求，可以按需退出（这里我们允许在同一列表内重排序）
-        
-        // 4. 从旧列表中移除
+        // 从旧列表中移除
         this.compiledProjects = this.compiledProjects.filter(p => p.fsPath !== draggedFsPath);
         this.uncompiledProjects = this.uncompiledProjects.filter(p => p.fsPath !== draggedFsPath);
 
-        // 5. 插入到新列表
+        // 插入到新列表
         if (targetIsCompiled) {
             const index = target ? this.compiledProjects.findIndex(p => p.fsPath === target.fsPath) : -1;
             if (index !== -1) {
@@ -227,6 +222,7 @@ class CbpProjectsProvider implements vscode.TreeDataProvider<CbpProjectItem>, vs
                 this.compiledProjects.push(draggedItem);
             }
             this.projectAllocation.set(draggedFsPath, true);
+            draggedItem.checkboxState = vscode.TreeItemCheckboxState.Checked; // 同步复选框
         } else {
             const index = target ? this.uncompiledProjects.findIndex(p => p.fsPath === target.fsPath) : -1;
             if (index !== -1) {
@@ -235,9 +231,9 @@ class CbpProjectsProvider implements vscode.TreeDataProvider<CbpProjectItem>, vs
                 this.uncompiledProjects.push(draggedItem);
             }
             this.projectAllocation.set(draggedFsPath, false);
+            draggedItem.checkboxState = vscode.TreeItemCheckboxState.Unchecked; // 同步复选框
         }
 
-        // 6. 保存状态并刷新 UI
         this.saveAllocationStatus();
         this._onDidChangeTreeData.fire();
     }
