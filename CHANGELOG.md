@@ -4,6 +4,16 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.0.4] - 2025-12-18
+### Fixed
+- 修复拖拽项目容易跳到另一个列表的问题
+
+## [0.0.3] - 2025-12-18
+
+### Changed
+- 允许外部配置 ninja 路径
+- 调整默认command输出路径
+
 ## [0.0.2] - 2025-12-16
 
 ### Added
