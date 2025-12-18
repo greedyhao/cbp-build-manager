@@ -13,6 +13,9 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 ### Fixed
 - 修正命令分组以正确显示在视图标题中
 
+### Changed
+- 优化编译状态显示
+
 ## [0.0.1] - 2025-12-16
 
 ### Added

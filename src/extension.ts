@@ -13,33 +13,71 @@ class CbpProjectItem extends vscode.TreeItem {
 	constructor(
 		public readonly label: string,
 		public readonly fsPath: string,
-		public readonly collapsibleState: vscode.TreeItemCollapsibleState
+		public isCompiled: boolean, // 新增：传入当前状态
+		public readonly collapsibleState: vscode.TreeItemCollapsibleState = vscode.TreeItemCollapsibleState.None
 	) {
 		super(label, collapsibleState);
 		this.tooltip = `${this.label}\n${this.fsPath}\n编译命令路径: ${this.compileCommandsPath}`;
 		this.description = path.basename(path.dirname(this.fsPath));
+		// Set context value for menu contributions
+		this.contextValue = 'cbpProject';
 		
-		// Set initial checkbox state to unchecked
-		this.checkboxState = vscode.TreeItemCheckboxState.Unchecked;
+		// 设置复选框状态
+		this.checkboxState = isCompiled
+			? vscode.TreeItemCheckboxState.Checked
+			: vscode.TreeItemCheckboxState.Unchecked;
 		
-		// Remove command to fix drag and drop conflict
-		// VS Code handles checkbox clicks automatically when checkboxState is set
+		// 移除之前的图标设置，因为复选框已经提供了视觉反馈
 	}
-
-	// Add context value for menu contributions
-	contextValue = 'cbpProject';
 }
+
+// 定义 MIME 类型常量，保持一致性
+const CBP_MIME_TYPE = 'application/vnd.code.tree.cbpproject';
 
 // Define the TreeDataProvider with drag and drop support
 class CbpProjectsProvider implements vscode.TreeDataProvider<CbpProjectItem>, vscode.TreeDragAndDropController<CbpProjectItem> {
 	private _onDidChangeTreeData: vscode.EventEmitter<CbpProjectItem | undefined | void> = new vscode.EventEmitter<CbpProjectItem | undefined | void>();
 	readonly onDidChangeTreeData: vscode.Event<CbpProjectItem | undefined | void> = this._onDidChangeTreeData.event;
 
-	// Store projects array
-	private projects: CbpProjectItem[] = [];
+	// Store projects in two separate arrays
+	private compiledProjects: CbpProjectItem[] = [];
+	private uncompiledProjects: CbpProjectItem[] = [];
 	
 	// Store compile commands paths persistently
 	private compileCommandsPaths: Map<string, string> = new Map();
+	
+	// Store project allocation status persistently
+	// Key: project fsPath, Value: true if compiled, false if uncompiled
+	private projectAllocation: Map<string, boolean> = new Map();
+	
+	// Reference to extension context for saving state
+	private context: vscode.ExtensionContext | null = null;
+	
+	// Set extension context for saving state
+	setContext(context: vscode.ExtensionContext): void {
+		this.context = context;
+		// Load saved allocation status
+		const savedAllocation = context.globalState.get<Record<string, boolean>>('projectAllocation');
+		if (savedAllocation) {
+			for (const [fsPath, isCompiled] of Object.entries(savedAllocation)) {
+				this.projectAllocation.set(fsPath, isCompiled);
+			}
+		}
+	}
+	
+	// Save allocation status to global state
+	private saveAllocationStatus(): void {
+		if (!this.context) {
+			return;
+		}
+		// Convert Map to object for storage
+		const allocationObject: Record<string, boolean> = {};
+		for (const [fsPath, isCompiled] of this.projectAllocation.entries()) {
+			allocationObject[fsPath] = isCompiled;
+		}
+		// Save to global state
+		this.context.globalState.update('projectAllocation', allocationObject);
+	}
 
 	// Refresh the project list
 	async refresh(): Promise<void> {
@@ -50,15 +88,21 @@ class CbpProjectsProvider implements vscode.TreeDataProvider<CbpProjectItem>, vs
 	// Scan workspace for .cbp files
 	private async scanProjects(): Promise<void> {
 		if (!vscode.workspace.workspaceFolders) {
-			this.projects = [];
+			this.compiledProjects = [];
+			this.uncompiledProjects = [];
 			return;
 		}
 
 		const cbpFiles = await vscode.workspace.findFiles('**/*.cbp');
-		this.projects = cbpFiles.map(file => {
+		const allProjects: CbpProjectItem[] = [];
+		
+		// Create new project items
+		for (const file of cbpFiles) {
+			const isCompiled = this.projectAllocation.get(file.fsPath) ?? false;
 			const item = new CbpProjectItem(
 				path.basename(file.fsPath, '.cbp'),
 				file.fsPath,
+				isCompiled, // 传递状态
 				vscode.TreeItemCollapsibleState.None
 			);
 			// Restore saved compile commands path if exists
@@ -66,49 +110,51 @@ class CbpProjectsProvider implements vscode.TreeDataProvider<CbpProjectItem>, vs
 				item.compileCommandsPath = this.compileCommandsPaths.get(file.fsPath)!;
 				item.tooltip = `${item.label}\n${item.fsPath}\n编译命令路径: ${item.compileCommandsPath}`;
 			}
-			return item;
-		});
+			allProjects.push(item);
+		}
+		
+		// Split projects into compiled and uncompiled lists based on allocation status
+		this.compiledProjects = [];
+		this.uncompiledProjects = [];
+		
+		for (const project of allProjects) {
+			// Get allocation status, default to false (uncompiled) if not found
+			const isCompiled = this.projectAllocation.get(project.fsPath) ?? false;
+			if (isCompiled) {
+				this.compiledProjects.push(project);
+			} else {
+				this.uncompiledProjects.push(project);
+			}
+		}
 	}
 
 	// Get tree item with enhanced visual style
 	getTreeItem(element: CbpProjectItem): vscode.TreeItem {
-		// Create a copy of the element to enhance visual style
-		const treeItem = element;
-		
-		// Add icon based on checkbox state
-		treeItem.iconPath = treeItem.checkboxState === vscode.TreeItemCheckboxState.Checked 
-			? new vscode.ThemeIcon('checklist-unchecked') 
-			: new vscode.ThemeIcon('checklist');
-		
 		// Show compile commands path in description for better visibility
-		treeItem.description = `${path.basename(path.dirname(treeItem.fsPath))} • ${treeItem.compileCommandsPath}`;
+		element.description = `${path.basename(path.dirname(element.fsPath))} • ${element.compileCommandsPath}`;
 		
-		return treeItem;
+		return element;
 	}
 
-	// Get children
+	// Get children - returns all projects (for backward compatibility)
 	getChildren(element?: CbpProjectItem): Thenable<CbpProjectItem[]> {
 		if (!element) {
-			return Promise.resolve(this.projects);
+			return Promise.resolve([...this.compiledProjects, ...this.uncompiledProjects]);
 		}
 		return Promise.resolve([]);
 	}
 
-	// Handle checkbox state change - use native checkboxState
-	toggleCheckbox(element: CbpProjectItem): void {
-		// Toggle the native checkboxState
-		if (element.checkboxState === vscode.TreeItemCheckboxState.Checked) {
-			element.checkboxState = vscode.TreeItemCheckboxState.Unchecked;
-		} else {
-			element.checkboxState = vscode.TreeItemCheckboxState.Checked;
-		}
-		
-		// Debug: Log the change
-		console.log(`${element.label}: checkboxState changed to ${element.checkboxState}`);
-		
-		// Notify the tree view to update
-		this._onDidChangeTreeData.fire();
+	// Get compiled projects
+	getCompiledProjects(): CbpProjectItem[] {
+		return this.compiledProjects;
 	}
+
+	// Get uncompiled projects
+	getUncompiledProjects(): CbpProjectItem[] {
+		return this.uncompiledProjects;
+	}
+
+
 
 	// Update compile commands path for a project
 	updateCompileCommandsPath(element: CbpProjectItem, newPath: string): void {
@@ -120,57 +166,106 @@ class CbpProjectsProvider implements vscode.TreeDataProvider<CbpProjectItem>, vs
 		this._onDidChangeTreeData.fire();
 	}
 
-	// Drag and drop configuration - simplified for compatibility
-	dropMimeTypes = ['application/vnd.code.tree.cbpProjects'];
-	dragMimeTypes = ['application/vnd.code.tree.cbpProjects'];
+	// Drag and drop configuration
+    dropMimeTypes = [CBP_MIME_TYPE];
+    dragMimeTypes = [CBP_MIME_TYPE];
 
-	// Handle drag operation
-	handleDrag?(source: CbpProjectItem[], treeDataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): void {
-		treeDataTransfer.set('application/vnd.code.tree.cbpProjects', new vscode.DataTransferItem(source));
-	}
+    // Handle drag operation
+    handleDrag(source: CbpProjectItem[], treeDataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): void {
+        if (source.length > 0) {
+            // 关键修复：传递项目的 fsPath 字符串，而不是整个对象
+            // 这样在 handleDrop 中通过 fsPath 查找原始对象更可靠
+            treeDataTransfer.set(CBP_MIME_TYPE, new vscode.DataTransferItem(source[0].fsPath));
+        }
+    }
+// Handle drop operation
+    async handleDrop(target: CbpProjectItem | undefined, treeDataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): Promise<void> {
+        const transferItem = treeDataTransfer.get(CBP_MIME_TYPE);
+        if (!transferItem) {
+            return;
+        }
 
-	// Handle drop operation - main drop logic
-	handleDrop?(target: CbpProjectItem | undefined, treeDataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): void {
-		const sourceItems = treeDataTransfer.get('application/vnd.code.tree.cbpProjects')?.value as CbpProjectItem[];
-		if (!sourceItems || sourceItems.length === 0) {
-			return;
-		}
+        // 获取拖拽项的 fsPath
+        const draggedFsPath = transferItem.value as string;
+        
+        // 1. 在所有项目中找到原始对象引用
+        const allProjects = [...this.compiledProjects, ...this.uncompiledProjects];
+        const draggedItem = allProjects.find(p => p.fsPath === draggedFsPath);
+        
+        if (!draggedItem) {
+            return;
+        }
 
-		const draggedItem = sourceItems[0];
-		const sourceIndex = this.projects.indexOf(draggedItem);
-		if (sourceIndex === -1) {
-			return;
-		}
+        // 2. 确定拖拽项当前属于哪个列表
+        const isFromCompiled = this.compiledProjects.some(p => p.fsPath === draggedFsPath);
+        const isFromUncompiled = this.uncompiledProjects.some(p => p.fsPath === draggedFsPath);
 
-		// Remove the dragged item from current position
-		this.projects.splice(sourceIndex, 1);
+        // 3. 确定目标列表的属性
+        let targetIsCompiled: boolean;
 
-		// Calculate new position
-		if (!target) {
-			// Drop at the end
-			this.projects.push(draggedItem);
-		} else {
-			const targetIndex = this.projects.indexOf(target);
-			if (targetIndex !== -1) {
-				// Insert before target
-				this.projects.splice(targetIndex, 0, draggedItem);
-			}
-		}
+        if (target) {
+            // 如果落点在一个具体的项目上，根据该项目的归属决定目标列表
+            targetIsCompiled = this.compiledProjects.some(p => p.fsPath === target.fsPath);
+        } else {
+            // 如果落点在空白处（没有 target），则假设移动到“另一个”列表
+            // 这是跨视图拖拽到空列表时的常用逻辑
+            targetIsCompiled = !isFromCompiled;
+        }
 
-		// Notify tree view to refresh
-		this._onDidChangeTreeData.fire();
-	}
+        // 如果目标和来源相同且没有位置变化需求，可以按需退出（这里我们允许在同一列表内重排序）
+        
+        // 4. 从旧列表中移除
+        this.compiledProjects = this.compiledProjects.filter(p => p.fsPath !== draggedFsPath);
+        this.uncompiledProjects = this.uncompiledProjects.filter(p => p.fsPath !== draggedFsPath);
 
-	// Get selected projects in order - use checkboxState directly
+        // 5. 插入到新列表
+        if (targetIsCompiled) {
+            const index = target ? this.compiledProjects.findIndex(p => p.fsPath === target.fsPath) : -1;
+            if (index !== -1) {
+                this.compiledProjects.splice(index, 0, draggedItem);
+            } else {
+                this.compiledProjects.push(draggedItem);
+            }
+            this.projectAllocation.set(draggedFsPath, true);
+        } else {
+            const index = target ? this.uncompiledProjects.findIndex(p => p.fsPath === target.fsPath) : -1;
+            if (index !== -1) {
+                this.uncompiledProjects.splice(index, 0, draggedItem);
+            } else {
+                this.uncompiledProjects.push(draggedItem);
+            }
+            this.projectAllocation.set(draggedFsPath, false);
+        }
+
+        // 6. 保存状态并刷新 UI
+        this.saveAllocationStatus();
+        this._onDidChangeTreeData.fire();
+    }
+
+	// Get selected projects in order - returns compiled projects
 	getSelectedProjects(): CbpProjectItem[] {
-		return this.projects.filter(project => 
-			project.checkboxState === vscode.TreeItemCheckboxState.Checked
-		);
+		return this.compiledProjects;
 	}
 
 	// Get all projects (for debugging)
 	getProjects(): CbpProjectItem[] {
-		return this.projects;
+		return [...this.compiledProjects, ...this.uncompiledProjects];
+	}
+
+	// Move project between lists
+	moveProject(item: CbpProjectItem, toCompiled: boolean): void {
+		// Remove from current list
+		this.compiledProjects = this.compiledProjects.filter(p => p !== item);
+		this.uncompiledProjects = this.uncompiledProjects.filter(p => p !== item);
+		
+		// Add to target list
+		if (toCompiled) {
+			this.compiledProjects.push(item);
+		} else {
+			this.uncompiledProjects.push(item);
+		}
+		
+		this._onDidChangeTreeData.fire();
 	}
 }
 
@@ -297,29 +392,118 @@ function runCommandInDirectory(cmd: string, cwd: string, output: vscode.OutputCh
 	});
 }
 
+// Define a TreeDataProvider for compiled projects
+class CompiledProjectsProvider implements vscode.TreeDataProvider<CbpProjectItem> {
+	private parentProvider: CbpProjectsProvider;
+	
+	constructor(parentProvider: CbpProjectsProvider) {
+		this.parentProvider = parentProvider;
+		// Listen to parent provider's change events
+		parentProvider.onDidChangeTreeData(() => {
+			this._onDidChangeTreeData.fire();
+		});
+	}
+	
+	private _onDidChangeTreeData: vscode.EventEmitter<CbpProjectItem | undefined | void> = new vscode.EventEmitter<CbpProjectItem | undefined | void>();
+	readonly onDidChangeTreeData: vscode.Event<CbpProjectItem | undefined | void> = this._onDidChangeTreeData.event;
+
+	getTreeItem(element: CbpProjectItem): vscode.TreeItem {
+		return this.parentProvider.getTreeItem(element);
+	}
+
+	getChildren(element?: CbpProjectItem | undefined): Thenable<CbpProjectItem[]> {
+		if (!element) {
+			return Promise.resolve(this.parentProvider.getCompiledProjects());
+		}
+		return Promise.resolve([]);
+	}
+}
+
+// Define a TreeDataProvider for uncompiled projects
+class UncompiledProjectsProvider implements vscode.TreeDataProvider<CbpProjectItem> {
+	private parentProvider: CbpProjectsProvider;
+	
+	constructor(parentProvider: CbpProjectsProvider) {
+		this.parentProvider = parentProvider;
+		// Listen to parent provider's change events
+		parentProvider.onDidChangeTreeData(() => {
+			this._onDidChangeTreeData.fire();
+		});
+	}
+	
+	private _onDidChangeTreeData: vscode.EventEmitter<CbpProjectItem | undefined | void> = new vscode.EventEmitter<CbpProjectItem | undefined | void>();
+	readonly onDidChangeTreeData: vscode.Event<CbpProjectItem | undefined | void> = this._onDidChangeTreeData.event;
+
+	getTreeItem(element: CbpProjectItem): vscode.TreeItem {
+		return this.parentProvider.getTreeItem(element);
+	}
+
+	getChildren(element?: CbpProjectItem | undefined): Thenable<CbpProjectItem[]> {
+		if (!element) {
+			return Promise.resolve(this.parentProvider.getUncompiledProjects());
+		}
+		return Promise.resolve([]);
+	}
+}
+
 // This method is called when your extension is activated
 export function activate(context: vscode.ExtensionContext) {
 	// Create output channel
 	const outputChannel = vscode.window.createOutputChannel('CBP Build Manager');
 
-	// Create tree data provider
-	const projectsProvider = new CbpProjectsProvider();
+	// Create main tree data provider
+	const mainProvider = new CbpProjectsProvider();
+	
+	// Set extension context for saving state
+	mainProvider.setContext(context);
 	
 	// Load saved compile commands paths from extension context
 	const savedPaths = context.globalState.get<Record<string, string>>('compileCommandsPaths');
 	if (savedPaths) {
 		// Convert saved paths to Map
 		for (const [fsPath, compilePath] of Object.entries(savedPaths)) {
-			(projectsProvider as any).compileCommandsPaths.set(fsPath, compilePath);
+			(mainProvider as any).compileCommandsPaths.set(fsPath, compilePath);
 		}
 	}
 
-	// Register tree view
-	const treeView = vscode.window.createTreeView('cbpProjects', {
-		treeDataProvider: projectsProvider,
-		dragAndDropController: projectsProvider,
+	// Create separate providers for each view
+	const compiledProvider = new CompiledProjectsProvider(mainProvider);
+	const uncompiledProvider = new UncompiledProjectsProvider(mainProvider);
+
+	// Register compiled projects tree view
+	const compiledTreeView = vscode.window.createTreeView('cbpCompiledProjects', {
+		treeDataProvider: compiledProvider,
+		dragAndDropController: mainProvider,
 		canSelectMany: true
 	});
+
+	// Register uncompiled projects tree view  
+	const uncompiledTreeView = vscode.window.createTreeView('cbpUncompiledProjects', {
+		treeDataProvider: uncompiledProvider,
+		dragAndDropController: mainProvider,
+		canSelectMany: true
+	});
+
+	// 处理复选框改变的逻辑
+	const handleCheckboxChange = (event: vscode.TreeCheckboxChangeEvent<CbpProjectItem>) => {
+		event.items.forEach(([item, newState]) => {
+			const isCompiled = newState === vscode.TreeItemCheckboxState.Checked;
+			
+			// 更新内存中的状态
+			(mainProvider as any).projectAllocation.set(item.fsPath, isCompiled);
+			
+			// 更新项目自身的属性（防止刷新前的视觉闪烁）
+			item.checkboxState = newState;
+		});
+
+		// 保存并刷新
+		(mainProvider as any).saveAllocationStatus();
+		mainProvider.refresh();
+	};
+
+	// 为两个 TreeView 都绑定监听器
+	compiledTreeView.onDidChangeCheckboxState(handleCheckboxChange);
+	uncompiledTreeView.onDidChangeCheckboxState(handleCheckboxChange);
 
 	// Function to get configuration settings
 	function getConfig() {
@@ -338,15 +522,16 @@ export function activate(context: vscode.ExtensionContext) {
 		outputChannel.clear();
 		outputChannel.show();
 		
-		// Debug: Log all projects and their checkbox state
-		outputChannel.appendLine('=== DEBUG: Project Checkbox State ===');
+		// Debug: Log all projects
+		outputChannel.appendLine('=== DEBUG: All Projects ===');
 		// Use a public method to get projects for debugging
-		const allProjects = projectsProvider.getProjects();
+		const allProjects = mainProvider.getProjects();
 		allProjects.forEach(project => {
-			outputChannel.appendLine(`${project.label}: checkboxState=${project.checkboxState}`);
+			const isCompiled = mainProvider.getCompiledProjects().includes(project);
+			outputChannel.appendLine(`${project.label}: isCompiled=${isCompiled}`);
 		});
 		
-		const selectedProjects = projectsProvider.getSelectedProjects();
+		const selectedProjects = mainProvider.getSelectedProjects();
 		outputChannel.appendLine(`=== 调试: 选中项目数量 ===`);
 		outputChannel.appendLine(`找到 ${selectedProjects.length} 个选中项目`);
 		
@@ -409,13 +594,10 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 
 	const refreshCommand = vscode.commands.registerCommand('cbp-build-manager.refreshProjects', () => {
-		projectsProvider.refresh();
+		mainProvider.refresh();
 	});
 
-	// Toggle checkbox when item is clicked
-	vscode.commands.registerCommand('cbpProjects.toggleCheckbox', (item: CbpProjectItem) => {
-		projectsProvider.toggleCheckbox(item);
-	});
+
 
 	// Set compile commands path for a project
 	const setCompileCommandsPathCommand = vscode.commands.registerCommand('cbp-build-manager.setCompileCommandsPath', async (item: CbpProjectItem) => {
@@ -440,12 +622,12 @@ export function activate(context: vscode.ExtensionContext) {
 		});
 		
 		if (newPath) {
-			projectsProvider.updateCompileCommandsPath(item, newPath);
+			mainProvider.updateCompileCommandsPath(item, newPath);
 			outputChannel.appendLine(`已更新项目 ${item.label} 的编译命令路径: ${newPath}`);
 			vscode.window.showInformationMessage(`已更新项目 ${item.label} 的编译命令路径`);
 			
 			// Save to extension context for persistence
-			const currentPaths = (projectsProvider as any).compileCommandsPaths;
+			const currentPaths = (mainProvider as any).compileCommandsPaths;
 			// Convert Map to object for storage
 			const pathsObject: Record<string, string> = {};
 			currentPaths.forEach((path: string, fsPath: string) => {
@@ -461,12 +643,13 @@ export function activate(context: vscode.ExtensionContext) {
 		buildCommand,
 		refreshCommand,
 		setCompileCommandsPathCommand,
-		treeView,
+		compiledTreeView,
+		uncompiledTreeView,
 		outputChannel
 	);
 
 	// Initial scan
-	projectsProvider.refresh();
+	mainProvider.refresh();
 }
 
 // This method is called when your extension is deactivated
