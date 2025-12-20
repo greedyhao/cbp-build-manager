@@ -3,7 +3,7 @@
   "publisher": "ZhuHao",
   "displayName": "CBP 构建管理器",
   "description": "用于管理和构建 Code::Blocks 项目的 VS Code 扩展",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "engines": {
     "vscode": "^1.64.0"
   },
@@ -41,11 +41,21 @@
       {
         "command": "cbp-build-manager.removeFromBuild",
         "title": "从编译列表移除",
-        "icon": "$(trash)"
+        "icon": "$(remove)"
       },
       {
         "command": "cbp-build-manager.deleteKeyAction",
         "title": "删除选中项目"
+      },
+      {
+        "command": "cbp-build-manager.rebuildSelected",
+        "title": "重新编译所选项目",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "cbp-build-manager.cleanSelected",
+        "title": "清理所选项目",
+        "icon": "$(trash)"
       }
     ],
     "viewsContainers": {
@@ -80,17 +90,27 @@
         },
         {
           "command": "cbp-build-manager.refreshProjects",
-          "group": "navigation@2",
+          "group": "navigation@1",
           "when": "view == cbpProjectLibrary"
         },
         {
           "command": "cbp-build-manager.removeFromBuild",
+          "group": "navigation@4",
+          "when": "view == cbpBuildQueue"
+        },
+        {
+          "command": "cbp-build-manager.rebuildSelected",
+          "group": "navigation@2",
+          "when": "view == cbpBuildQueue"
+        },
+        {
+          "command": "cbp-build-manager.cleanSelected",
           "group": "navigation@3",
           "when": "view == cbpBuildQueue"
         },
         {
           "command": "cbp-build-manager.addToBuild",
-          "group": "navigation@4",
+          "group": "navigation@2",
           "when": "view == cbpProjectLibrary"
         }
       ],

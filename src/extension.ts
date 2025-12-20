@@ -635,6 +635,126 @@ export function activate(context: vscode.ExtensionContext) {
         }
         outputChannel.appendLine(`=== 构建流程结束 ===`);
     }));
+
+    // 6. 执行重新编译 (先清理再构建)
+    context.subscriptions.push(vscode.commands.registerCommand('cbp-build-manager.rebuildSelected', async () => {
+        outputChannel.clear();
+        outputChannel.show();
+        
+        // 获取所有在队列中且被勾选的项目
+        const queue = manager.getQueueItems();
+        const selectedProjects = queue.filter(p => p.checkboxState === vscode.TreeItemCheckboxState.Checked);
+        
+        outputChannel.appendLine(`=== 开始重新编译流程 ===`);
+        outputChannel.appendLine(`选中项目数: ${selectedProjects.length}`);
+
+        if (selectedProjects.length === 0) {
+            vscode.window.showInformationMessage('没有选中要重新编译的项目。');
+            return;
+        }
+
+        const config = vscode.workspace.getConfiguration('cbpBuildManager');
+        const cbp2clangPath = config.get<string>('cbp2clangPath', 'cbp2clang');
+        const convertCommandTemplate = config.get<string>('convertCommand', '{cbp2clang} {cbpFile} {compileCommands} -l ld');
+        const buildScript = config.get<string>('buildCommand', './build.bat');
+        const ninjaPath = config.get<string>('ninjaPath', '');
+        
+        // 检查 cbp2clangd 版本
+        try {
+            outputChannel.appendLine(`\n=== 检查 cbp2clangd 版本 ===`);
+            const version = await checkCbp2clangVersion(cbp2clangPath);
+            const isCompatible = compareVersions(version, MIN_REQUIRED_CBP2CLANG_VERSION);
+            
+            if (isCompatible) {
+                outputChannel.appendLine(`cbp2clangd 版本: ${version} (满足要求，最小要求版本: ${MIN_REQUIRED_CBP2CLANG_VERSION})`);
+            } else {
+                const errorMessage = `cbp2clangd 版本 ${version} 低于最小要求版本 ${MIN_REQUIRED_CBP2CLANG_VERSION}，请升级后再试。`;
+                outputChannel.appendLine(`错误: ${errorMessage}`);
+                vscode.window.showErrorMessage(errorMessage);
+                return; // 禁止编译
+            }
+        } catch (error) {
+            const errorMessage = `无法检查 cbp2clangd 版本: ${(error as Error).message}，请确保 cbp2clangd 已正确安装。`;
+            outputChannel.appendLine(`错误: ${errorMessage}`);
+            vscode.window.showErrorMessage(errorMessage);
+            return; // 禁止编译
+        }
+
+        for (const project of selectedProjects) {
+            outputChannel.appendLine(`>>> 处理项目: ${project.label}`);
+            
+            try {
+                const projectDir = path.dirname(project.fsPath);
+                
+                // 1. 运行 ninja -t clean 清理
+                outputChannel.appendLine(`[0/3] 清理构建文件...`);
+                const ninjaCommand = ninjaPath ? `${ninjaPath} -t clean` : `ninja -t clean`;
+                await runCommandInDirectory(ninjaCommand, projectDir, outputChannel);
+                
+                // 2. 变量替换
+                let convertCommand = convertCommandTemplate
+                    .replace('{cbp2clang}', cbp2clangPath)
+                    .replace('{cbpFile}', project.fsPath)
+                    .replace('{compileCommands}', project.compileCommandsPath);
+                
+                if (ninjaPath) {
+                    convertCommand += ` --ninja "${ninjaPath}"`;
+                }
+                
+                outputChannel.appendLine(`[1/3] 生成 Compile Commands...`);
+                await runCommand(convertCommand, outputChannel);
+                    
+                outputChannel.appendLine(`[2/3] 执行构建脚本...`);
+                await runCommandInDirectory(buildScript, projectDir, outputChannel);
+                
+                outputChannel.appendLine(`>>> 项目 ${project.label} 重新编译完成.\n`);
+            } catch (error) {
+                outputChannel.appendLine(`!!! 项目 ${project.label} 重新编译失败: ${error}\n`);
+                // 可以选择是否 continue，这里默认继续下一个
+            }
+        }
+        outputChannel.appendLine(`=== 重新编译流程结束 ===`);
+    }));
+
+    // 7. 执行清理 (仅清理构建文件)
+    context.subscriptions.push(vscode.commands.registerCommand('cbp-build-manager.cleanSelected', async () => {
+        outputChannel.clear();
+        outputChannel.show();
+        
+        // 获取所有在队列中且被勾选的项目
+        const queue = manager.getQueueItems();
+        const selectedProjects = queue.filter(p => p.checkboxState === vscode.TreeItemCheckboxState.Checked);
+        
+        outputChannel.appendLine(`=== 开始清理流程 ===`);
+        outputChannel.appendLine(`选中项目数: ${selectedProjects.length}`);
+
+        if (selectedProjects.length === 0) {
+            vscode.window.showInformationMessage('没有选中要清理的项目。');
+            return;
+        }
+
+        const config = vscode.workspace.getConfiguration('cbpBuildManager');
+        const ninjaPath = config.get<string>('ninjaPath', '');
+
+        for (const project of selectedProjects) {
+            outputChannel.appendLine(`>>> 处理项目: ${project.label}`);
+            
+            try {
+                const projectDir = path.dirname(project.fsPath);
+                
+                // 运行 ninja -t clean 清理
+                outputChannel.appendLine(`[1/1] 清理构建文件...`);
+                const ninjaCommand = ninjaPath ? `${ninjaPath} -t clean` : `ninja -t clean`;
+                await runCommandInDirectory(ninjaCommand, projectDir, outputChannel);
+                
+                outputChannel.appendLine(`>>> 项目 ${project.label} 清理完成.\n`);
+            } catch (error) {
+                outputChannel.appendLine(`!!! 项目 ${project.label} 清理失败: ${error}\n`);
+                // 可以选择是否 continue，这里默认继续下一个
+            }
+        }
+        outputChannel.appendLine(`=== 清理流程结束 ===`);
+    }));
 }
 
 // This method is called when your extension is deactivated
