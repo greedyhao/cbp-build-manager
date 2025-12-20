@@ -1,3 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
-  <path fill="currentColor" d="M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zm0 1a5 5 0 1 1 0 10 5 5 0 0 1 0-10zm-1 7H6v-2h1v2zm2 0h1v-2h-1v2zm2 0h1v-2h-1v2z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- 底部堆叠的线条，代表构建产物 -->
+  <line x1="4" y1="21" x2="20" y2="21" />
+  <line x1="4" y1="17" x2="20" y2="17" />
+  <line x1="4" y1="13" x2="20" y2="13" />
+  
+  <!-- 向下的粗箭头，代表 Build 动作 -->
+  <path d="M12 3v10" />
+  <path d="M8 9l4 4 4-4" />
 </svg>
