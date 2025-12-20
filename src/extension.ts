@@ -452,12 +452,71 @@ async function checkCbp2clangVersion(cbp2clangPath: string): Promise<string> {
     });
 }
 
+// 检查并更新 ninja path 配置
+function checkAndUpdateNinjaPath(config: vscode.WorkspaceConfiguration, outputChannel: vscode.OutputChannel) {
+    const ninjaPath = config.get<string>('ninjaPath', '');
+    outputChannel.appendLine(`开始检查 Ninja 路径: ${ninjaPath}`);
+    
+    if (!ninjaPath) {
+        outputChannel.appendLine('Ninja 路径为空，使用系统默认 ninja 命令');
+        return; // 空路径不处理
+    }
+
+    try {
+        const stats = fs.statSync(ninjaPath);
+        outputChannel.appendLine(`路径存在，类型: ${stats.isDirectory() ? '文件夹' : '文件'}`);
+        
+        if (stats.isDirectory()) {
+            // 如果是文件夹，检查是否存在 ninja.exe
+            const ninjaExePath = path.join(ninjaPath, 'ninja.exe');
+            outputChannel.appendLine(`检查文件夹中是否存在 ninja.exe: ${ninjaExePath}`);
+            
+            if (fs.existsSync(ninjaExePath)) {
+                // 更新配置为具体的可执行文件路径
+                outputChannel.appendLine(`找到 ninja.exe，更新配置为: ${ninjaExePath}`);
+                config.update('ninjaPath', ninjaExePath, vscode.ConfigurationTarget.Global);
+                vscode.window.showInformationMessage(`Ninja 路径已自动更新为: ${ninjaExePath}`);
+            } else {
+                // 文件夹中没有 ninja.exe，弹出警告
+                const warningMessage = `Ninja 路径是文件夹，但未找到 ninja.exe: ${ninjaPath}`;
+                outputChannel.appendLine(warningMessage);
+                vscode.window.showWarningMessage(warningMessage);
+            }
+        } else {
+            // 如果是文件，验证是否为可执行文件
+            outputChannel.appendLine(`路径是文件，验证为可执行文件`);
+            // 这里可以添加更多验证逻辑，比如检查文件扩展名等
+        }
+    } catch (error) {
+        // 路径不存在，弹出错误消息
+        const errorMessage = `Ninja 路径检查失败: ${(error as Error).message}`;
+        outputChannel.appendLine(errorMessage);
+        vscode.window.showErrorMessage(errorMessage);
+    }
+    
+    outputChannel.appendLine('Ninja 路径检查完成');
+}
+
+
+
 // --- 扩展激活入口 ---
 
 export function activate(context: vscode.ExtensionContext) {
     const outputChannel = vscode.window.createOutputChannel('CBP Build Manager');
     const manager = new CbpDataManager();
     manager.setContext(context);
+    
+    // 监听 ninjaPath 配置变化
+    vscode.workspace.onDidChangeConfiguration(e => {
+        if (e.affectsConfiguration('cbpBuildManager.ninjaPath')) {
+            const config = vscode.workspace.getConfiguration('cbpBuildManager');
+            checkAndUpdateNinjaPath(config, outputChannel);
+        }
+    });
+    
+    // 初始检查
+    const initialConfig = vscode.workspace.getConfiguration('cbpBuildManager');
+    checkAndUpdateNinjaPath(initialConfig, outputChannel);
 
     const buildQueueProvider = new BuildQueueProvider(manager);
     const libraryProvider = new ProjectLibraryProvider(manager);
