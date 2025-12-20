@@ -4,6 +4,10 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.0.6] - 2025-12-20
+### Fixed
+- 重新发布版本
+
 ## [0.0.5] - 2025-12-20
 ### Added
 - 重构为双视图管理：构建队列和项目资源库
