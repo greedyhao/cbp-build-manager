@@ -75,22 +75,22 @@
       "view/title": [
         {
           "command": "cbp-build-manager.buildSelected",
-          "group": "navigation",
+          "group": "navigation@1",
           "when": "view == cbpBuildQueue"
         },
         {
           "command": "cbp-build-manager.refreshProjects",
-          "group": "navigation",
-          "when": "view == cbpBuildQueue || view == cbpProjectLibrary"
+          "group": "navigation@2",
+          "when": "view == cbpProjectLibrary"
         },
         {
           "command": "cbp-build-manager.removeFromBuild",
-          "group": "navigation",
+          "group": "navigation@3",
           "when": "view == cbpBuildQueue"
         },
         {
           "command": "cbp-build-manager.addToBuild",
-          "group": "navigation",
+          "group": "navigation@4",
           "when": "view == cbpProjectLibrary"
         }
       ],
