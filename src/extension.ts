@@ -5,6 +5,10 @@ import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 
+// --- 常量定义 ---
+// cbp2clangd 最小要求版本
+const MIN_REQUIRED_CBP2CLANG_VERSION = '1.1.6';
+
 // --- 基础数据类 ---
 
 // 1. 普通文件夹节点 (用于下方树视图)
@@ -383,6 +387,71 @@ function runCommandInDirectory(cmd: string, cwd: string | undefined, output: vsc
     });
 }
 
+// 比较两个版本字符串，返回 true 如果 version1 >= version2
+function compareVersions(version1: string, version2: string): boolean {
+    const v1Parts = version1.split('.').map(Number);
+    const v2Parts = version2.split('.').map(Number);
+    
+    for (let i = 0; i < Math.max(v1Parts.length, v2Parts.length); i++) {
+        const v1 = v1Parts[i] || 0;
+        const v2 = v2Parts[i] || 0;
+        
+        if (v1 > v2) {return true;}
+        if (v1 < v2) {return false;}
+    }
+    
+    return true; // 版本相同
+}
+
+// 检查 cbp2clangd 版本
+async function checkCbp2clangVersion(cbp2clangPath: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+        let version = '';
+        let error = '';
+
+        const options: cp.SpawnOptions = {
+            windowsHide: true,
+            shell: process.platform === 'win32' ? 'cmd.exe' : undefined
+        };
+
+        const child = cp.spawn(
+            process.platform === 'win32' ? 'cmd.exe' : cbp2clangPath,
+            process.platform === 'win32' ? ['/c', `${cbp2clangPath} -v`] : ['-v'],
+            options
+        );
+
+        if (child.stdout) {
+            child.stdout.on('data', (data: Buffer) => {
+                version += decodeBuffer(data);
+            });
+        }
+
+        if (child.stderr) {
+            child.stderr.on('data', (data: Buffer) => {
+                error += decodeBuffer(data);
+            });
+        }
+
+        child.on('close', (code: number) => {
+            if (code === 0) {
+                // 解析版本信息，格式：cbp2clangd v1.1.5
+                const versionMatch = version.match(/v([0-9]+\.[0-9]+\.[0-9]+)/);
+                if (versionMatch) {
+                    resolve(versionMatch[1]);
+                } else {
+                    resolve(version.trim());
+                }
+            } else {
+                reject(new Error(`Failed to check cbp2clangd version: ${error || `Exit code ${code}`}`));
+            }
+        });
+
+        child.on('error', (err: Error) => {
+            reject(new Error(`Failed to execute cbp2clangd: ${err.message}`));
+        });
+    });
+}
+
 // --- 扩展激活入口 ---
 
 export function activate(context: vscode.ExtensionContext) {
@@ -421,6 +490,28 @@ export function activate(context: vscode.ExtensionContext) {
     // 1. 刷新
     context.subscriptions.push(vscode.commands.registerCommand('cbp-build-manager.refreshProjects', () => {
         manager.scanWorkspace();
+    }));
+
+    // 2. 检查 cbp2clangd 版本
+    context.subscriptions.push(vscode.commands.registerCommand('cbp-build-manager.checkCbp2clangVersion', async () => {
+        const config = vscode.workspace.getConfiguration('cbpBuildManager');
+        const cbp2clangPath = config.get<string>('cbp2clangPath', 'cbp2clang');
+        
+        try {
+            const version = await checkCbp2clangVersion(cbp2clangPath);
+            const isCompatible = compareVersions(version, MIN_REQUIRED_CBP2CLANG_VERSION);
+            
+            if (isCompatible) {
+                vscode.window.showInformationMessage(`cbp2clangd 版本: ${version} (满足要求)`);
+                outputChannel.appendLine(`cbp2clangd 版本: ${version} (满足要求，最小要求版本: ${MIN_REQUIRED_CBP2CLANG_VERSION})`);
+            } else {
+                vscode.window.showWarningMessage(`cbp2clangd 版本: ${version} (低于最小要求版本 ${MIN_REQUIRED_CBP2CLANG_VERSION})`);
+                outputChannel.appendLine(`cbp2clangd 版本: ${version} (警告: 低于最小要求版本 ${MIN_REQUIRED_CBP2CLANG_VERSION})`);
+            }
+        } catch (error) {
+            vscode.window.showErrorMessage(`检查 cbp2clangd 版本失败: ${(error as Error).message}`);
+            outputChannel.appendLine(`检查 cbp2clangd 版本失败: ${(error as Error).message}`);
+        }
     }));
 
     // 2. 添加到构建列表 (从下方 + 号)
@@ -492,6 +583,27 @@ export function activate(context: vscode.ExtensionContext) {
         const convertCommandTemplate = config.get<string>('convertCommand', '{cbp2clang} {cbpFile} {compileCommands} -l ld');
         const buildScript = config.get<string>('buildCommand', './build.bat');
         const ninjaPath = config.get<string>('ninjaPath', '');
+        
+        // 检查 cbp2clangd 版本
+        try {
+            outputChannel.appendLine(`\n=== 检查 cbp2clangd 版本 ===`);
+            const version = await checkCbp2clangVersion(cbp2clangPath);
+            const isCompatible = compareVersions(version, MIN_REQUIRED_CBP2CLANG_VERSION);
+            
+            if (isCompatible) {
+                outputChannel.appendLine(`cbp2clangd 版本: ${version} (满足要求，最小要求版本: ${MIN_REQUIRED_CBP2CLANG_VERSION})`);
+            } else {
+                const errorMessage = `cbp2clangd 版本 ${version} 低于最小要求版本 ${MIN_REQUIRED_CBP2CLANG_VERSION}，请升级后再试。`;
+                outputChannel.appendLine(`错误: ${errorMessage}`);
+                vscode.window.showErrorMessage(errorMessage);
+                return; // 禁止编译
+            }
+        } catch (error) {
+            const errorMessage = `无法检查 cbp2clangd 版本: ${(error as Error).message}，请确保 cbp2clangd 已正确安装。`;
+            outputChannel.appendLine(`错误: ${errorMessage}`);
+            vscode.window.showErrorMessage(errorMessage);
+            return; // 禁止编译
+        }
 
         for (const project of selectedProjects) {
             outputChannel.appendLine(`>>> 处理项目: ${project.label}`);
