@@ -4,6 +4,13 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.0.7] - 2025-12-20
+### Added
+- 增加文件保存的检查
+
+### Fixed
+- 设置 cbp2clangd 最小要求版本为 v1.1.8
+
 ## [0.0.6] - 2025-12-20
 ### Fixed
 - 重新发布版本
