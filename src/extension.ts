@@ -452,6 +452,38 @@ async function checkCbp2clangVersion(cbp2clangPath: string): Promise<string> {
     });
 }
 
+// 检测未保存文件并提示保存
+async function checkAndPromptSave(): Promise<boolean> {
+    // 获取所有未保存的文档
+    const unsavedDocs = vscode.workspace.textDocuments.filter(doc => doc.isDirty);
+    
+    if (unsavedDocs.length > 0) {
+        // 弹窗提示用户是否保存所有未保存的文件
+        const result = await vscode.window.showInformationMessage(
+            `检测到 ${unsavedDocs.length} 个未保存的文件，是否全部保存？`,
+            { modal: true },
+            '全部保存',
+            '不保存'
+        );
+        
+        switch (result) {
+            case '全部保存':
+                // 保存所有未保存的文档
+                await Promise.all(unsavedDocs.map(doc => doc.save()));
+                return true;
+            case '不保存':
+                // 不保存，继续执行操作
+                return true;
+            default:
+                // 用户取消操作 (点击取消按钮或关闭对话框)
+                return false;
+        }
+    }
+    
+    // 没有未保存的文件，直接继续执行操作
+    return true;
+}
+
 // 检查并更新 ninja path 配置
 function checkAndUpdateNinjaPath(config: vscode.WorkspaceConfiguration, outputChannel: vscode.OutputChannel) {
     const ninjaPath = config.get<string>('ninjaPath', '');
@@ -622,6 +654,11 @@ export function activate(context: vscode.ExtensionContext) {
 
     // 5. 执行构建 (核心功能保留)
     context.subscriptions.push(vscode.commands.registerCommand('cbp-build-manager.buildSelected', async () => {
+        // 检测未保存文件并提示保存
+        if (!(await checkAndPromptSave())) {
+            return; // 用户取消操作
+        }
+        
         outputChannel.clear();
         outputChannel.show();
         
@@ -697,6 +734,11 @@ export function activate(context: vscode.ExtensionContext) {
 
     // 6. 执行重新编译 (先清理再构建)
     context.subscriptions.push(vscode.commands.registerCommand('cbp-build-manager.rebuildSelected', async () => {
+        // 检测未保存文件并提示保存
+        if (!(await checkAndPromptSave())) {
+            return; // 用户取消操作
+        }
+        
         outputChannel.clear();
         outputChannel.show();
         
@@ -777,6 +819,11 @@ export function activate(context: vscode.ExtensionContext) {
 
     // 7. 执行清理 (仅清理构建文件)
     context.subscriptions.push(vscode.commands.registerCommand('cbp-build-manager.cleanSelected', async () => {
+        // 检测未保存文件并提示保存
+        if (!(await checkAndPromptSave())) {
+            return; // 用户取消操作
+        }
+        
         outputChannel.clear();
         outputChannel.show();
         
