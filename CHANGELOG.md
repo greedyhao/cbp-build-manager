@@ -4,6 +4,16 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.0.8] - 2025-12-26
+### Changed
+- 删除了 Compile Commands Path 的配置选项和功能
+- 直接使用 VSCode 当前打开的文件夹的绝对路径作为 compile_commands.json 输出路径
+- 简化了项目配置，移除了项目级别的编译命令路径设置
+- 更新了文档，删除了与 Compile Commands Path 相关的内容
+
+### Fixed
+- 设置 cbp2clangd 最小要求版本为 v1.2.1
+
 ## [0.0.7] - 2025-12-20
 ### Added
 - 增加文件保存的检查

@@ -9,7 +9,6 @@
   - **构建队列**：显示已选择的项目，支持拖放排序和复选框选择
   - **项目资源库**：按文件夹层级显示可用项目，自动隐藏已在队列中的项目
 - **拖放操作**：在构建队列中拖动来控制构建顺序
-- **项目级配置**：为每个项目设置 compile_commands.json 路径
 - **cbp2clangd 版本检查**：自动检查 cbp2clangd 版本，确保使用兼容版本
 - **Ninja 路径配置**：支持自动检查和更新 Ninja 路径，兼容旧版本设置
 - **可自定义命令**：配置 cbp2clang 路径和构建脚本
@@ -21,7 +20,7 @@
 
 ### 方法 1：从 VSIX 包安装
 
-1. 下载最新的 `cbp-build-manager-0.0.5.vsix` 文件
+1. 下载最新的 `cbp-build-manager-0.0.8.vsix` 文件
 2. 打开 VS Code
 3. 按 `Ctrl+Shift+X` 打开扩展面板
 4. 点击右上角的 `...` 菜单
@@ -44,7 +43,6 @@
 | 设置项 | 默认值 | 描述 |
 |--------|--------|------|
 | `cbpBuildManager.cbp2clangPath` | `cbp2clang` | cbp2clang 可执行文件的路径，可从 [GitHub](https://github.com/greedyhao/cbp2clangd) 下载 |
-| `cbpBuildManager.compileCommandsPath` | `.` | compile_commands.json 的默认相对路径（相对于 .cbp 文件） |
 | `cbpBuildManager.convertCommand` | `{cbp2clang} {cbpFile} {compileCommands} -l ld` | 转换命令的模板 |
 | `cbpBuildManager.buildCommand` | `./build.bat` | 运行构建脚本的命令 |
 | `cbpBuildManager.ninjaPath` | `""` | ninja 可执行文件的路径，支持自动检查和更新，兼容旧版本文件夹路径设置 |
@@ -77,27 +75,17 @@
 - **拖放**：在**构建队列**中拖动来更改构建顺序
 - **删除项目**：右键点击项目，选择**从编译列表移除**选项
 
-### 5. 配置项目级设置
-
-右键点击项目可访问上下文菜单选项：
-- **Set Compile Commands Path**：为特定项目配置 compile_commands.json 的输出路径
-
-### 6. 检查 cbp2clangd 版本
-
-- 在命令面板中运行 **CBP Build Manager: 检查 cbp2clangd 版本** 命令
-- 或在构建时自动检查版本
-
-### 7. 构建项目
+### 5. 构建项目
 
 点击 **构建** 按钮（▶️）开始按指定顺序构建**构建队列**中勾选的项目。
 
-### 8. 重新编译项目
+### 6. 重新编译项目
 
 点击 **重新编译** 按钮（🔄）开始按指定顺序重新编译**构建队列**中勾选的项目：
 - 首先运行 `ninja -t clean` 清理构建文件
 - 然后执行正常的构建流程
 
-### 9. 清理项目
+### 7. 清理项目
 
 点击 **清理** 按钮（🗑️）开始按指定顺序清理**构建队列**中勾选的项目：
 - 仅运行 `ninja -t clean` 清理构建文件
@@ -108,8 +96,8 @@
 当你点击构建按钮时，扩展会执行以下步骤：
 
 1. **读取配置**：获取 cbp2clang 和命令的设置
-2. **检查 cbp2clangd 版本**：确保 cbp2clangd 版本兼容（最小要求：v1.1.8）
-3. **生成命令**：为**构建队列**中勾选的每个项目创建转换命令
+2. **检查 cbp2clangd 版本**：确保 cbp2clangd 版本兼容（最小要求：v1.2.1）
+3. **生成命令**：为**构建队列**中勾选的每个项目创建转换命令，使用 VSCode 工作区路径作为 compile_commands.json 输出路径
 4. **运行转换**：执行 cbp2clang 生成 compile_commands.json，用于 clangd 插件索引项目
 5. **执行构建脚本**：运行配置的构建脚本（默认：./build.bat）
 6. **显示输出**：在输出面板和终端中显示日志

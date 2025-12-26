@@ -7,7 +7,7 @@ import * as path from 'path';
 
 // --- 常量定义 ---
 // cbp2clangd 最小要求版本
-const MIN_REQUIRED_CBP2CLANG_VERSION = '1.1.7';
+const MIN_REQUIRED_CBP2CLANG_VERSION = '1.2.1';
 
 // --- 基础数据类 ---
 
