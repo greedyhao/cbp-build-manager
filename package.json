@@ -30,10 +30,6 @@
         "icon": "$(refresh)"
       },
       {
-        "command": "cbp-build-manager.setCompileCommandsPath",
-        "title": "设置编译命令路径"
-      },
-      {
         "command": "cbp-build-manager.addToBuild",
         "title": "添加到编译列表",
         "icon": "$(add)"
@@ -119,11 +115,6 @@
           "command": "cbp-build-manager.removeFromBuild",
           "group": "inline",
           "when": "view == cbpBuildQueue && viewItem == cbpProject"
-        },
-        {
-          "command": "cbp-build-manager.setCompileCommandsPath",
-          "group": "inline",
-          "when": "viewItem == cbpProject"
         }
       ]
     },
@@ -142,11 +133,6 @@
           "type": "string",
           "default": "cbp2clang",
           "description": "cbp2clang 可执行文件的路径，可从 https://github.com/greedyhao/cbp2clangd 下载"
-        },
-        "cbpBuildManager.compileCommandsPath": {
-          "type": "string",
-          "default": ".",
-          "description": "compile_commands.json 的相对输出路径（相对于 .cbp 文件）"
         },
         "cbpBuildManager.convertCommand": {
           "type": "string",

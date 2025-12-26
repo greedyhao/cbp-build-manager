@@ -26,8 +26,6 @@ class DirectoryItem extends vscode.TreeItem {
 
 // 2. CBP 项目节点 (通用于上下视图)
 class CbpProjectItem extends vscode.TreeItem {
-    public compileCommandsPath: string = '.';
-
     constructor(
         public readonly label: string,
         public readonly fsPath: string,
@@ -60,7 +58,6 @@ class CbpDataManager {
     
     // 状态持久化
     private context: vscode.ExtensionContext | null = null;
-    private compileCommandsPaths: Map<string, string> = new Map();
 
     private _onDidChangeTreeData = new vscode.EventEmitter<void>();
     readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
@@ -76,15 +73,7 @@ class CbpDataManager {
     private loadState() {
         if (!this.context) {return;}
         
-        // 1. 加载 Compile Commands 路径配置
-        const savedPaths = this.context.globalState.get<Record<string, string>>('compileCommandsPaths');
-        if (savedPaths) {
-            for (const [fsPath, compilePath] of Object.entries(savedPaths)) {
-                this.compileCommandsPaths.set(fsPath, compilePath);
-            }
-        }
-
-        // 2. 加载构建队列 (保存的是 fsPath 的有序数组)
+        // 加载构建队列 (保存的是 fsPath 的有序数组)
         const savedQueuePaths = this.context.globalState.get<string[]>('buildQueueOrder') || [];
         const savedCheckState = this.context.globalState.get<Record<string, boolean>>('projectCheckState') || {};
 
@@ -93,7 +82,6 @@ class CbpDataManager {
             const name = path.basename(fsPath, '.cbp');
             const isChecked = savedCheckState[fsPath] ?? true;
             const item = new CbpProjectItem(name, fsPath, isChecked, vscode.TreeItemCollapsibleState.None, true);
-            this.restoreItemData(item);
             return item;
         });
     }
@@ -109,20 +97,6 @@ class CbpDataManager {
         const checkState: Record<string, boolean> = {};
         this.buildQueue.forEach(p => checkState[p.fsPath] = (p.checkboxState === vscode.TreeItemCheckboxState.Checked));
         this.context.globalState.update('projectCheckState', checkState);
-
-        // 3. 保存 compile_commands 路径
-        const pathsObject: Record<string, string> = {};
-        this.compileCommandsPaths.forEach((val, key) => pathsObject[key] = val);
-        this.context.globalState.update('compileCommandsPaths', pathsObject);
-    }
-
-    private restoreItemData(item: CbpProjectItem) {
-        if (this.compileCommandsPaths.has(item.fsPath)) {
-            item.compileCommandsPath = this.compileCommandsPaths.get(item.fsPath)!;
-            item.tooltip = `${item.label}\n${item.fsPath}\n编译命令路径: ${item.compileCommandsPath}`;
-            // 更新描述，使其在扁平列表中更清晰
-            item.description = `${path.basename(path.dirname(item.fsPath))} • ${item.compileCommandsPath}`;
-        }
     }
 
     // --- 业务逻辑 ---
@@ -159,7 +133,6 @@ class CbpDataManager {
             if (!this.buildQueue.some(p => p.fsPath === fsPath)) {
                 const name = path.basename(fsPath, '.cbp');
                 const item = new CbpProjectItem(name, fsPath, true, vscode.TreeItemCollapsibleState.None, true);
-                this.restoreItemData(item);
                 this.buildQueue.push(item);
                 changed = true;
             }
@@ -208,15 +181,6 @@ class CbpDataManager {
         item.isChecked = (state === vscode.TreeItemCheckboxState.Checked);
         this.saveState();
     }
-
-    // 更新 compile_commands 路径
-    updateCompilePath(item: CbpProjectItem, newPath: string) {
-        item.compileCommandsPath = newPath;
-        this.compileCommandsPaths.set(item.fsPath, newPath);
-        this.restoreItemData(item);
-        this.saveState();
-        this._onDidChangeTreeData.fire();
-    }
 }
 
 // --- 上方视图 Provider: 构建队列 (扁平列表 + 拖拽) ---
@@ -233,8 +197,6 @@ class BuildQueueProvider implements vscode.TreeDataProvider<CbpProjectItem>, vsc
     readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
     getTreeItem(element: CbpProjectItem): vscode.TreeItem {
-        // 确保显示编译命令路径
-        element.description = `${path.basename(path.dirname(element.fsPath))} • ${element.compileCommandsPath}`;
         return element;
     }
 
@@ -634,24 +596,6 @@ export function activate(context: vscode.ExtensionContext) {
         }
     }));
 
-    // 4. 设置编译路径
-    context.subscriptions.push(vscode.commands.registerCommand('cbp-build-manager.setCompileCommandsPath', async (item: CbpProjectItem) => {
-        const currentPath = item.compileCommandsPath;
-        const config = vscode.workspace.getConfiguration('cbpBuildManager');
-        const globalDefault = config.get<string>('compileCommandsPath', '.');
-        
-        const newPath = await vscode.window.showInputBox({
-            title: `设置项目 ${item.label} 的编译命令路径`,
-            value: currentPath,
-            placeHolder: globalDefault,
-            prompt: `输入 compile_commands.json 的相对输出路径`
-        });
-        
-        if (newPath) {
-            manager.updateCompilePath(item, newPath);
-        }
-    }));
-
     // 5. 执行构建 (核心功能保留)
     context.subscriptions.push(vscode.commands.registerCommand('cbp-build-manager.buildSelected', async () => {
         // 检测未保存文件并提示保存
@@ -707,11 +651,14 @@ export function activate(context: vscode.ExtensionContext) {
             try {
                 const projectDir = path.dirname(project.fsPath);
                 
+                // 获取 VSCode 工作区路径
+                const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || projectDir;
+                
                 // 变量替换
                 let convertCommand = convertCommandTemplate
                     .replace('{cbp2clang}', cbp2clangPath)
                     .replace('{cbpFile}', project.fsPath)
-                    .replace('{compileCommands}', project.compileCommandsPath);
+                    .replace('{compileCommands}', workspacePath);
                 
                 if (ninjaPath) {
                     convertCommand += ` --ninja "${ninjaPath}"`;
@@ -787,6 +734,9 @@ export function activate(context: vscode.ExtensionContext) {
             try {
                 const projectDir = path.dirname(project.fsPath);
                 
+                // 获取 VSCode 工作区路径
+                const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || projectDir;
+                
                 // 1. 运行 ninja -t clean 清理
                 outputChannel.appendLine(`[0/3] 清理构建文件...`);
                 const ninjaCommand = ninjaPath ? `${ninjaPath} -t clean` : `ninja -t clean`;
@@ -796,7 +746,7 @@ export function activate(context: vscode.ExtensionContext) {
                 let convertCommand = convertCommandTemplate
                     .replace('{cbp2clang}', cbp2clangPath)
                     .replace('{cbpFile}', project.fsPath)
-                    .replace('{compileCommands}', project.compileCommandsPath);
+                    .replace('{compileCommands}', workspacePath);
                 
                 if (ninjaPath) {
                     convertCommand += ` --ninja "${ninjaPath}"`;
