@@ -148,6 +148,11 @@
           "type": "string",
           "default": "",
           "description": "ninja 可执行文件的路径，如果配置了该路径，会通过 --ninja 参数传递给转换命令"
+        },
+        "cbpBuildManager.noHeaderInsertion": {
+          "type": "boolean",
+          "default": true,
+          "description": "禁止 clangd 在补全代码时插入头文件"
         }
       }
     }

@@ -7,7 +7,7 @@ import * as path from 'path';
 
 // --- 常量定义 ---
 // cbp2clangd 最小要求版本
-const MIN_REQUIRED_CBP2CLANG_VERSION = '1.2.1';
+const MIN_REQUIRED_CBP2CLANG_VERSION = '1.2.7';
 
 // --- 基础数据类 ---
 
@@ -623,6 +623,8 @@ export function activate(context: vscode.ExtensionContext) {
         const convertCommandTemplate = config.get<string>('convertCommand', '{cbp2clang} {cbpFile} {compileCommands} -l ld');
         const buildScript = config.get<string>('buildCommand', './build.bat');
         const ninjaPath = config.get<string>('ninjaPath', '');
+        const noHeaderInsertion = config.get<boolean>('noHeaderInsertion', false);
+        outputChannel.appendLine(`noHeaderInsertion 配置值 (cbpBuildManager.noHeaderInsertion): ${noHeaderInsertion}`);
         
         // 检查 cbp2clangd 版本
         try {
@@ -659,11 +661,16 @@ export function activate(context: vscode.ExtensionContext) {
                     .replace('{cbp2clang}', cbp2clangPath)
                     .replace('{cbpFile}', project.fsPath)
                     .replace('{compileCommands}', workspacePath);
-                
+
                 if (ninjaPath) {
                     convertCommand += ` --ninja "${ninjaPath}"`;
                 }
-                
+
+                if (noHeaderInsertion) {
+                    convertCommand += ` --no-header-insertion`;
+                }
+
+                outputChannel.appendLine(`执行的转换命令: ${convertCommand}`);
                 outputChannel.appendLine(`[1/2] 生成 Compile Commands...`);
                 await runCommand(convertCommand, outputChannel);
                     
@@ -706,6 +713,8 @@ export function activate(context: vscode.ExtensionContext) {
         const convertCommandTemplate = config.get<string>('convertCommand', '{cbp2clang} {cbpFile} {compileCommands} -l ld');
         const buildScript = config.get<string>('buildCommand', './build.bat');
         const ninjaPath = config.get<string>('ninjaPath', '');
+        const noHeaderInsertion = config.get<boolean>('noHeaderInsertion', false);
+        outputChannel.appendLine(`noHeaderInsertion 配置值 (cbpBuildManager.noHeaderInsertion): ${noHeaderInsertion}`);
         
         // 检查 cbp2clangd 版本
         try {
@@ -747,11 +756,16 @@ export function activate(context: vscode.ExtensionContext) {
                     .replace('{cbp2clang}', cbp2clangPath)
                     .replace('{cbpFile}', project.fsPath)
                     .replace('{compileCommands}', workspacePath);
-                
+
                 if (ninjaPath) {
                     convertCommand += ` --ninja "${ninjaPath}"`;
                 }
-                
+
+                if (noHeaderInsertion) {
+                    convertCommand += ` --no-header-insertion`;
+                }
+
+                outputChannel.appendLine(`执行的转换命令: ${convertCommand}`);
                 outputChannel.appendLine(`[1/3] 生成 Compile Commands...`);
                 await runCommand(convertCommand, outputChannel);
                     
