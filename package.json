@@ -3,7 +3,7 @@
   "publisher": "ZhuHao",
   "displayName": "CBP 构建管理器",
   "description": "用于管理和构建 Code::Blocks 项目的 VS Code 扩展",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "engines": {
     "vscode": "^1.64.0"
   },

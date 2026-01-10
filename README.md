@@ -96,7 +96,7 @@
 当你点击构建按钮时，扩展会执行以下步骤：
 
 1. **读取配置**：获取 cbp2clang 和命令的设置
-2. **检查 cbp2clangd 版本**：确保 cbp2clangd 版本兼容（最小要求：v1.2.1）
+2. **检查 cbp2clangd 版本**：确保 cbp2clangd 版本兼容（最小要求：v1.2.7）
 3. **生成命令**：为**构建队列**中勾选的每个项目创建转换命令，使用 VSCode 工作区路径作为 compile_commands.json 输出路径
 4. **运行转换**：执行 cbp2clang 生成 compile_commands.json，用于 clangd 插件索引项目
 5. **执行构建脚本**：运行配置的构建脚本（默认：./build.bat）
