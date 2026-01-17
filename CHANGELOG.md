@@ -4,6 +4,18 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.0.10] - 2026-01-16
+### Changed
+- 将插件输出改为 Pseudoterminal，支持 ANSI 控制符
+- 改进终端管理，实现终端复用，避免一直创建新终端
+- 优化输出格式，添加彩色标识增强可读性
+
+### Fixed
+- 修复手动关闭终端后点击编译无反应的问题
+- 修复输出格式混乱，解决阶梯状输出和错位问题
+- 修复命令执行失败，解决 "文件名、目录名或卷标语法不正确" 错误
+- 完善 ANSI 控制符处理，确保输出效果与真实终端一致
+
 ## [0.0.8] - 2025-12-26
 ### Changed
 - 删除了 Compile Commands Path 的配置选项和功能
