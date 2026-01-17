@@ -295,57 +295,281 @@ class ProjectLibraryProvider implements vscode.TreeDataProvider<CbpProjectItem |
 
 // --- 辅助函数 ---
 
+// 1. 更加健壮的解码函数
 function decodeBuffer(buffer: Buffer): string {
     const iconv = require('iconv-lite');
-    try {
-        return iconv.decode(buffer, 'gbk');
-    } catch {
+    
+    // 许多现代工具(Clang/Ninja)在Windows上也输出UTF-8
+    // 但CMD默认环境经常是GBK。
+    // 策略：尝试用 UTF-8 解码，如果发现乱码字符（），则判定为 GBK。
+    const strUtf8 = iconv.decode(buffer, 'utf8');
+    
+    // 检查是否存在"替换字符" (U+FFFD)，这通常意味着UTF-8解码失败
+    if (strUtf8.includes('\uFFFD')) {
+        // 如果UTF-8解码看起来不对，尝试GBK
         try {
-            return iconv.decode(buffer, 'utf8');
+            return iconv.decode(buffer, 'gbk');
         } catch {
-            return buffer.toString('utf8');
+            return strUtf8; // 尽力而为
+        }
+    }
+    return strUtf8;
+}
+
+// 2. 格式化输出：解决阶梯状换行问题
+function formatOutput(text: string): string {
+    // 核心修复：Pseudoterminal 需要 \r\n 才能正确换行并回到行首
+    // 但要避免重复的 \r 字符导致格式错乱
+    
+    // 1. 先将所有的 \r\n 替换为 \n，避免重复处理
+    let normalized = text.replace(/\r\n/g, '\n');
+    
+    // 2. 再将单独的 \r 替换为 \n，确保只有 \n 作为换行符
+    normalized = normalized.replace(/\r/g, '\n');
+    
+    // 3. 最后将所有的 \n 替换为 \r\n，确保终端正确显示
+    normalized = normalized.replace(/\n/g, '\r\n');
+    
+    return normalized;
+}
+
+// --- Pseudoterminal 实现 ---
+
+class BuildTerminal implements vscode.Pseudoterminal {
+    private writeEmitter = new vscode.EventEmitter<string>();
+    onDidWrite: vscode.Event<string> = this.writeEmitter.event;
+    
+    private closeEmitter = new vscode.EventEmitter<number>();
+    onDidClose: vscode.Event<number> = this.closeEmitter.event;
+
+    // 保持一个内部状态，防止多次 dispose
+    private isClosed = false;
+
+    open(initialDimensions: vscode.TerminalDimensions | undefined): void {
+        this.writeEmitter.fire('\x1b[36mCBP Build Manager Terminal Ready.\x1b[0m\r\n\r\n');
+    }
+
+    close(): void {
+        if (!this.isClosed) {
+            this.isClosed = true;
+            this.closeEmitter.fire(0);
+        }
+    }
+
+    write(data: string): void {
+        if (!this.isClosed) {
+            this.writeEmitter.fire(formatOutput(data));
+        }
+    }
+    
+    // 提供一个方法来发送原始 ANSI 序列（不进行换行处理）
+    writeRaw(data: string): void {
+         if (!this.isClosed) {
+            this.writeEmitter.fire(data);
         }
     }
 }
 
-function runCommand(cmd: string, output: vscode.OutputChannel): Promise<void> {
-    return runCommandInDirectory(cmd, undefined, output);
+// --- 全局终端管理 (核心修复：复用逻辑) ---
+
+// 我们需要同时持有 VS Code 的 Terminal 对象(用于 show) 和 我们的 PTY 对象(用于 write)
+let g_terminal: vscode.Terminal | null = null;
+let g_pty: BuildTerminal | null = null;
+
+function createOrShowTerminal(): BuildTerminal {
+    const TERMINAL_NAME = 'CBP Build Manager';
+
+    // 1. 检查当前保存的实例是否有效
+    // 这里的关键是：必须同时检查 变量是否非空 AND VS Code 的终端列表里是否真的有它
+    // (因为用户可能直接点击垃圾桶关掉了终端，但变量还没来得及清空)
+    const existingTerminal = vscode.window.terminals.find(t => t.name === TERMINAL_NAME);
+
+    if (g_terminal && g_pty && existingTerminal && existingTerminal === g_terminal) {
+        // 完美匹配，复用
+        g_terminal.show();
+        return g_pty;
+    }
+
+    // 2. 如果状态不一致（例如 UI 上有这个终端，但我们丢失了 PTY 句柄，通常发生在重载窗口后），
+    // 必须销毁旧的，因为我们无法连接到旧终端的输入流
+    if (existingTerminal) {
+        existingTerminal.dispose();
+    }
+
+    // 3. 创建全新实例
+    g_pty = new BuildTerminal();
+    g_terminal = vscode.window.createTerminal({
+        name: TERMINAL_NAME,
+        pty: g_pty,
+        isTransient: false
+    });
+
+    g_terminal.show();
+    return g_pty;
 }
 
-function runCommandInDirectory(cmd: string, cwd: string | undefined, output: vscode.OutputChannel): Promise<void> {
-    return new Promise((resolve, reject) => {
-        let actualCmd = cmd;
-        if (process.platform === 'win32' && cmd.startsWith('./')) {
-            actualCmd = cmd.replace('./', '.\\');
-        }
+// --- 命令执行 ---
 
-        const options: cp.SpawnOptions = {
+function runCommand(cmd: string): Promise<void> {
+    return runCommandInDirectory(cmd, undefined);
+}
+// --- 辅助类：行缓冲处理器 ---
+// 用于解决流式数据可能将一行日志切断的问题，确保每次 callback 都是完整的一行
+class OutputLineBuffer {
+    private buffer = '';
+
+    constructor(private onLine: (line: string) => void) {}
+
+    append(chunk: string) {
+        this.buffer += chunk;
+        let index;
+        // 循环提取完整的行
+        while ((index = this.buffer.indexOf('\n')) !== -1) {
+            // 提取一行，去除末尾的回车符
+            const line = this.buffer.substring(0, index).replace(/\r$/, '');
+            this.onLine(line);
+            // 移动缓冲区指针
+            this.buffer = this.buffer.substring(index + 1);
+        }
+    }
+
+    // 处理流结束后的剩余数据
+    flush() {
+        if (this.buffer.trim().length > 0) {
+            this.onLine(this.buffer);
+            this.buffer = '';
+        }
+    }
+}
+
+// --- 命令执行函数 (核心修改) ---
+
+function runCommandInDirectory(cmd: string, cwd: string | undefined): Promise<void> {
+    const pty = createOrShowTerminal();
+    
+    return new Promise((resolve, reject) => {
+        let actualCmd = cmd.replace(/\u00A0/g, ' ').trim();
+
+        // 构造 Windows 兼容的 Spawn 参数
+        let spawnCmd = actualCmd;
+        let spawnArgs: string[] = [];
+        let spawnOptions: cp.SpawnOptions = {
             cwd,
-            windowsHide: true,
-            shell: process.platform === 'win32' ? 'cmd.exe' : undefined,
-            stdio: ['pipe', 'pipe', 'pipe'],
-            env: { ...process.env, PYTHONUNBUFFERED: '1' }
+            env: { 
+                ...process.env,
+                PYTHONUNBUFFERED: '1',
+                CLICOLOR_FORCE: '1', 
+                FORCE_COLOR: '1',    
+                ANSICON: '1'        
+            },
+            stdio: ['pipe', 'pipe', 'pipe'] 
         };
 
-        const child = cp.spawn(
-            process.platform === 'win32' ? 'cmd.exe' : actualCmd,
-            process.platform === 'win32' ? ['/c', 'echo off && ' + actualCmd] : [],
-            options
-        );
+        if (process.platform === 'win32') {
+            if (actualCmd.startsWith('./')) {
+                actualCmd = actualCmd.replace('./', '.\\');
+            }
+            if (actualCmd.includes('"')) {
+                actualCmd = `"${actualCmd}"`;
+            }
 
-        if (child.stdout) {
-            child.stdout.on('data', (data: Buffer) => output.append(decodeBuffer(data)));
+            spawnCmd = 'cmd.exe';
+            spawnArgs = ['/d', '/c', actualCmd];
+            
+            spawnOptions.shell = false;
+            spawnOptions.windowsVerbatimArguments = true;
+            spawnOptions.windowsHide = true;
+        } else {
+            spawnOptions.shell = true;
+            spawnOptions.windowsHide = true;
         }
-        if (child.stderr) {
-            child.stderr.on('data', (data: Buffer) => output.append(decodeBuffer(data)));
+
+        // 显示启动命令
+        let displayCmd = actualCmd;
+        if (process.platform === 'win32' && displayCmd.length > 2 && displayCmd.startsWith('"') && displayCmd.endsWith('"')) {
+             displayCmd = displayCmd.slice(1, -1);
         }
+        pty.write(`\x1b[33m$ ${displayCmd}\x1b[0m\r\n`);
 
-        child.on('close', (code: number) => {
-            if (code === 0) {resolve();}
-            else {reject(new Error(`Exit code ${code}`));}
-        });
+        try {
+            const child = cp.spawn(spawnCmd, spawnArgs, spawnOptions);
 
-        child.on('error', (err: Error) => reject(err));
+            // 定义行处理逻辑：模拟 Ninja 的 TTY 行为
+            const handleLineOutput = (line: string) => {
+                // Ninja 进度条特征： [1/10] ...
+                // 正则说明：匹配行首的 [数字/数字]
+                const progressMatch = line.match(/^(\[\d+\/\d+\])\s+(.*)/);
+
+                if (progressMatch) {
+                    const prefix = progressMatch[1]; // [1/10]
+                    const rest = progressMatch[2];   // 剩余的命令内容
+
+                    // 尝试从冗长的命令中提取文件名，模拟 "Building file.c" 的简洁效果
+                    // 逻辑：查找 .c, .cpp, .S 等源文件结尾的词
+                    // 这是一个简单的启发式处理，如果没匹配到就显示原命令，但保持单行刷新
+                    let shortMsg = rest;
+                    
+                    // 常见的编译命令结构匹配
+                    const fileMatch = rest.match(/([^\s"]+\.(c|cpp|cc|cxx|S|s))\b/i);
+                    if (fileMatch) {
+                        const fileName = path.basename(fileMatch[1]); // 只取文件名，不带长路径
+                        shortMsg = `Building ${fileName}`;
+                    } else {
+                        // 如果提取不到文件名，且命令太长，可以截断 (可选)
+                        // shortMsg = rest.length > 80 ? rest.substring(0, 77) + '...' : rest;
+                    }
+
+                    // 关键点：
+                    // \r      -> 回到行首
+                    // \x1b[K  -> 清除当前行内容 (防止旧的长文字残留在后面)
+                    // 不加 \n -> 保持在同一行
+                    pty.writeRaw(`\r\x1b[K\x1b[32m${prefix}\x1b[0m ${shortMsg}`);
+                } else {
+                    // 非进度条信息（如错误、警告、CMake输出），正常换行打印
+                    // 先打印一个 \r\n 确保不会覆盖掉当前的进度条，或者将进度条推上去
+                    pty.write(`\r\n${line}`);
+                }
+            };
+
+            // 使用 OutputLineBuffer 来处理 stdout 和 stderr
+            const lineBuffer = new OutputLineBuffer(handleLineOutput);
+
+            if (child.stdout) {
+                child.stdout.on('data', (data: Buffer) => {
+                    lineBuffer.append(decodeBuffer(data));
+                });
+            }
+
+            if (child.stderr) {
+                child.stderr.on('data', (data: Buffer) => {
+                    // stderr 也走同样的 buffer 逻辑，防止切断
+                    // 通常 Ninja 的错误信息也是正常文本，不需要特殊红色处理，
+                    // 因为 Clang/GCC 自身带有颜色代码。
+                    lineBuffer.append(decodeBuffer(data));
+                });
+            }
+
+            child.on('close', (code: number) => {
+                // 确保缓冲区最后的内容被打印
+                lineBuffer.flush();
+                // 最后换个行，结束进度条状态
+                pty.write('\r\n'); 
+
+                if (code === 0) {
+                    resolve();
+                } else {
+                    reject(new Error(`Exit code ${code}`));
+                }
+            });
+
+            child.on('error', (err: Error) => {
+                pty.write(`\x1b[31mSpawn Error: ${err.message}\x1b[0m\r\n`);
+                reject(err);
+            });
+        } catch (error) {
+            pty.write(`\x1b[31mExecution Error: ${(error as Error).message}\x1b[0m\r\n`);
+            reject(error);
+        }
     });
 }
 
@@ -447,48 +671,49 @@ async function checkAndPromptSave(): Promise<boolean> {
 }
 
 // 检查并更新 ninja path 配置
-function checkAndUpdateNinjaPath(config: vscode.WorkspaceConfiguration, outputChannel: vscode.OutputChannel) {
+function checkAndUpdateNinjaPath(config: vscode.WorkspaceConfiguration) {
     const ninjaPath = config.get<string>('ninjaPath', '');
-    outputChannel.appendLine(`开始检查 Ninja 路径: ${ninjaPath}`);
+    const terminal = createOrShowTerminal();
+    terminal.write(`开始检查 Ninja 路径: ${ninjaPath}\n`);
     
     if (!ninjaPath) {
-        outputChannel.appendLine('Ninja 路径为空，使用系统默认 ninja 命令');
+        terminal.write('Ninja 路径为空，使用系统默认 ninja 命令\n');
         return; // 空路径不处理
     }
 
     try {
         const stats = fs.statSync(ninjaPath);
-        outputChannel.appendLine(`路径存在，类型: ${stats.isDirectory() ? '文件夹' : '文件'}`);
+        terminal.write(`路径存在，类型: ${stats.isDirectory() ? '文件夹' : '文件'}\n`);
         
         if (stats.isDirectory()) {
             // 如果是文件夹，检查是否存在 ninja.exe
             const ninjaExePath = path.join(ninjaPath, 'ninja.exe');
-            outputChannel.appendLine(`检查文件夹中是否存在 ninja.exe: ${ninjaExePath}`);
+            terminal.write(`检查文件夹中是否存在 ninja.exe: ${ninjaExePath}\n`);
             
             if (fs.existsSync(ninjaExePath)) {
                 // 更新配置为具体的可执行文件路径
-                outputChannel.appendLine(`找到 ninja.exe，更新配置为: ${ninjaExePath}`);
+                terminal.write(`找到 ninja.exe，更新配置为: ${ninjaExePath}\n`);
                 config.update('ninjaPath', ninjaExePath, vscode.ConfigurationTarget.Global);
                 vscode.window.showInformationMessage(`Ninja 路径已自动更新为: ${ninjaExePath}`);
             } else {
                 // 文件夹中没有 ninja.exe，弹出警告
                 const warningMessage = `Ninja 路径是文件夹，但未找到 ninja.exe: ${ninjaPath}`;
-                outputChannel.appendLine(warningMessage);
+                terminal.write(`${warningMessage}\n`);
                 vscode.window.showWarningMessage(warningMessage);
             }
         } else {
             // 如果是文件，验证是否为可执行文件
-            outputChannel.appendLine(`路径是文件，验证为可执行文件`);
+            terminal.write(`路径是文件，验证为可执行文件\n`);
             // 这里可以添加更多验证逻辑，比如检查文件扩展名等
         }
     } catch (error) {
         // 路径不存在，弹出错误消息
         const errorMessage = `Ninja 路径检查失败: ${(error as Error).message}`;
-        outputChannel.appendLine(errorMessage);
+        terminal.write(`${errorMessage}\n`);
         vscode.window.showErrorMessage(errorMessage);
     }
     
-    outputChannel.appendLine('Ninja 路径检查完成');
+    terminal.write('Ninja 路径检查完成\n');
 }
 
 
@@ -496,21 +721,28 @@ function checkAndUpdateNinjaPath(config: vscode.WorkspaceConfiguration, outputCh
 // --- 扩展激活入口 ---
 
 export function activate(context: vscode.ExtensionContext) {
-    const outputChannel = vscode.window.createOutputChannel('CBP Build Manager');
     const manager = new CbpDataManager();
     manager.setContext(context);
+
+    // 监听终端关闭，清理全局变量引用
+    context.subscriptions.push(vscode.window.onDidCloseTerminal((terminal) => {
+        if (terminal.name === 'CBP Build Manager') {
+            g_terminal = null;
+            g_pty = null;
+        }
+    }));
     
     // 监听 ninjaPath 配置变化
     vscode.workspace.onDidChangeConfiguration(e => {
         if (e.affectsConfiguration('cbpBuildManager.ninjaPath')) {
             const config = vscode.workspace.getConfiguration('cbpBuildManager');
-            checkAndUpdateNinjaPath(config, outputChannel);
+            checkAndUpdateNinjaPath(config);
         }
     });
     
     // 初始检查
     const initialConfig = vscode.workspace.getConfiguration('cbpBuildManager');
-    checkAndUpdateNinjaPath(initialConfig, outputChannel);
+    checkAndUpdateNinjaPath(initialConfig);
 
     const buildQueueProvider = new BuildQueueProvider(manager);
     const libraryProvider = new ProjectLibraryProvider(manager);
@@ -549,6 +781,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(vscode.commands.registerCommand('cbp-build-manager.checkCbp2clangVersion', async () => {
         const config = vscode.workspace.getConfiguration('cbpBuildManager');
         const cbp2clangPath = config.get<string>('cbp2clangPath', 'cbp2clang');
+        const terminal = createOrShowTerminal();
         
         try {
             const version = await checkCbp2clangVersion(cbp2clangPath);
@@ -556,14 +789,14 @@ export function activate(context: vscode.ExtensionContext) {
             
             if (isCompatible) {
                 vscode.window.showInformationMessage(`cbp2clangd 版本: ${version} (满足要求)`);
-                outputChannel.appendLine(`cbp2clangd 版本: ${version} (满足要求，最小要求版本: ${MIN_REQUIRED_CBP2CLANG_VERSION})`);
+                terminal.write(`cbp2clangd 版本: ${version} (满足要求，最小要求版本: ${MIN_REQUIRED_CBP2CLANG_VERSION})\n`);
             } else {
                 vscode.window.showWarningMessage(`cbp2clangd 版本: ${version} (低于最小要求版本 ${MIN_REQUIRED_CBP2CLANG_VERSION})`);
-                outputChannel.appendLine(`cbp2clangd 版本: ${version} (警告: 低于最小要求版本 ${MIN_REQUIRED_CBP2CLANG_VERSION})`);
+                terminal.write(`cbp2clangd 版本: ${version} (警告: 低于最小要求版本 ${MIN_REQUIRED_CBP2CLANG_VERSION})\n`);
             }
         } catch (error) {
             vscode.window.showErrorMessage(`检查 cbp2clangd 版本失败: ${(error as Error).message}`);
-            outputChannel.appendLine(`检查 cbp2clangd 版本失败: ${(error as Error).message}`);
+            terminal.write(`检查 cbp2clangd 版本失败: ${(error as Error).message}\n`);
         }
     }));
 
@@ -603,15 +836,14 @@ export function activate(context: vscode.ExtensionContext) {
             return; // 用户取消操作
         }
         
-        outputChannel.clear();
-        outputChannel.show();
+        const terminal = createOrShowTerminal();
+        terminal.write(`\x1b[36m=== 开始构建流程 ===\x1b[0m\n`);
         
         // 获取所有在队列中且被勾选的项目
         const queue = manager.getQueueItems();
         const selectedProjects = queue.filter(p => p.checkboxState === vscode.TreeItemCheckboxState.Checked);
         
-        outputChannel.appendLine(`=== 开始构建流程 ===`);
-        outputChannel.appendLine(`选中项目数: ${selectedProjects.length}`);
+        terminal.write(`选中项目数: ${selectedProjects.length}\n`);
 
         if (selectedProjects.length === 0) {
             vscode.window.showInformationMessage('没有选中要构建的项目。');
@@ -624,31 +856,31 @@ export function activate(context: vscode.ExtensionContext) {
         const buildScript = config.get<string>('buildCommand', './build.bat');
         const ninjaPath = config.get<string>('ninjaPath', '');
         const noHeaderInsertion = config.get<boolean>('noHeaderInsertion', false);
-        outputChannel.appendLine(`noHeaderInsertion 配置值 (cbpBuildManager.noHeaderInsertion): ${noHeaderInsertion}`);
+        terminal.write(`noHeaderInsertion 配置值 (cbpBuildManager.noHeaderInsertion): ${noHeaderInsertion}\n`);
         
         // 检查 cbp2clangd 版本
         try {
-            outputChannel.appendLine(`\n=== 检查 cbp2clangd 版本 ===`);
+            terminal.write(`\n\x1b[36m=== 检查 cbp2clangd 版本 ===\x1b[0m\n`);
             const version = await checkCbp2clangVersion(cbp2clangPath);
             const isCompatible = compareVersions(version, MIN_REQUIRED_CBP2CLANG_VERSION);
             
             if (isCompatible) {
-                outputChannel.appendLine(`cbp2clangd 版本: ${version} (满足要求，最小要求版本: ${MIN_REQUIRED_CBP2CLANG_VERSION})`);
+                terminal.write(`cbp2clangd 版本: ${version} (满足要求，最小要求版本: ${MIN_REQUIRED_CBP2CLANG_VERSION})\n`);
             } else {
                 const errorMessage = `cbp2clangd 版本 ${version} 低于最小要求版本 ${MIN_REQUIRED_CBP2CLANG_VERSION}，请升级后再试。`;
-                outputChannel.appendLine(`错误: ${errorMessage}`);
+                terminal.write(`\x1b[31m错误: ${errorMessage}\x1b[0m\n`);
                 vscode.window.showErrorMessage(errorMessage);
                 return; // 禁止编译
             }
         } catch (error) {
             const errorMessage = `无法检查 cbp2clangd 版本: ${(error as Error).message}，请确保 cbp2clangd 已正确安装。`;
-            outputChannel.appendLine(`错误: ${errorMessage}`);
+            terminal.write(`\x1b[31m错误: ${errorMessage}\x1b[0m\n`);
             vscode.window.showErrorMessage(errorMessage);
             return; // 禁止编译
         }
 
         for (const project of selectedProjects) {
-            outputChannel.appendLine(`>>> 处理项目: ${project.label}`);
+            terminal.write(`\n\x1b[33m>>> 处理项目: ${project.label}\x1b[0m\n`);
             
             try {
                 const projectDir = path.dirname(project.fsPath);
@@ -670,20 +902,20 @@ export function activate(context: vscode.ExtensionContext) {
                     convertCommand += ` --no-header-insertion`;
                 }
 
-                outputChannel.appendLine(`执行的转换命令: ${convertCommand}`);
-                outputChannel.appendLine(`[1/2] 生成 Compile Commands...`);
-                await runCommand(convertCommand, outputChannel);
+                terminal.write(`执行的转换命令: ${convertCommand}\n`);
+                terminal.write(`\x1b[32m[1/2] 生成 Compile Commands...\x1b[0m\n`);
+                await runCommand(convertCommand);
                     
-                outputChannel.appendLine(`[2/2] 执行构建脚本...`);
-                await runCommandInDirectory(buildScript, projectDir, outputChannel);
+                terminal.write(`\x1b[32m[2/2] 执行构建脚本...\x1b[0m\n`);
+                await runCommandInDirectory(buildScript, projectDir);
                 
-                outputChannel.appendLine(`>>> 项目 ${project.label} 完成.\n`);
+                terminal.write(`\x1b[32m>>> 项目 ${project.label} 完成.\x1b[0m\n`);
             } catch (error) {
-                outputChannel.appendLine(`!!! 项目 ${project.label} 失败: ${error}\n`);
+                terminal.write(`\x1b[31m!!! 项目 ${project.label} 失败: ${error}\x1b[0m\n`);
                 // 可以选择是否 continue，这里默认继续下一个
             }
         }
-        outputChannel.appendLine(`=== 构建流程结束 ===`);
+        terminal.write(`\n\x1b[36m=== 构建流程结束 ===\x1b[0m\n`);
     }));
 
     // 6. 执行重新编译 (先清理再构建)
@@ -693,15 +925,14 @@ export function activate(context: vscode.ExtensionContext) {
             return; // 用户取消操作
         }
         
-        outputChannel.clear();
-        outputChannel.show();
+        const terminal = createOrShowTerminal();
+        terminal.write(`\x1b[36m=== 开始重新编译流程 ===\x1b[0m\n`);
         
         // 获取所有在队列中且被勾选的项目
         const queue = manager.getQueueItems();
         const selectedProjects = queue.filter(p => p.checkboxState === vscode.TreeItemCheckboxState.Checked);
         
-        outputChannel.appendLine(`=== 开始重新编译流程 ===`);
-        outputChannel.appendLine(`选中项目数: ${selectedProjects.length}`);
+        terminal.write(`选中项目数: ${selectedProjects.length}\n`);
 
         if (selectedProjects.length === 0) {
             vscode.window.showInformationMessage('没有选中要重新编译的项目。');
@@ -714,31 +945,31 @@ export function activate(context: vscode.ExtensionContext) {
         const buildScript = config.get<string>('buildCommand', './build.bat');
         const ninjaPath = config.get<string>('ninjaPath', '');
         const noHeaderInsertion = config.get<boolean>('noHeaderInsertion', false);
-        outputChannel.appendLine(`noHeaderInsertion 配置值 (cbpBuildManager.noHeaderInsertion): ${noHeaderInsertion}`);
+        terminal.write(`noHeaderInsertion 配置值 (cbpBuildManager.noHeaderInsertion): ${noHeaderInsertion}\n`);
         
         // 检查 cbp2clangd 版本
         try {
-            outputChannel.appendLine(`\n=== 检查 cbp2clangd 版本 ===`);
+            terminal.write(`\n\x1b[36m=== 检查 cbp2clangd 版本 ===\x1b[0m\n`);
             const version = await checkCbp2clangVersion(cbp2clangPath);
             const isCompatible = compareVersions(version, MIN_REQUIRED_CBP2CLANG_VERSION);
             
             if (isCompatible) {
-                outputChannel.appendLine(`cbp2clangd 版本: ${version} (满足要求，最小要求版本: ${MIN_REQUIRED_CBP2CLANG_VERSION})`);
+                terminal.write(`cbp2clangd 版本: ${version} (满足要求，最小要求版本: ${MIN_REQUIRED_CBP2CLANG_VERSION})\n`);
             } else {
                 const errorMessage = `cbp2clangd 版本 ${version} 低于最小要求版本 ${MIN_REQUIRED_CBP2CLANG_VERSION}，请升级后再试。`;
-                outputChannel.appendLine(`错误: ${errorMessage}`);
+                terminal.write(`\x1b[31m错误: ${errorMessage}\x1b[0m\n`);
                 vscode.window.showErrorMessage(errorMessage);
                 return; // 禁止编译
             }
         } catch (error) {
             const errorMessage = `无法检查 cbp2clangd 版本: ${(error as Error).message}，请确保 cbp2clangd 已正确安装。`;
-            outputChannel.appendLine(`错误: ${errorMessage}`);
+            terminal.write(`\x1b[31m错误: ${errorMessage}\x1b[0m\n`);
             vscode.window.showErrorMessage(errorMessage);
             return; // 禁止编译
         }
 
         for (const project of selectedProjects) {
-            outputChannel.appendLine(`>>> 处理项目: ${project.label}`);
+            terminal.write(`\n\x1b[33m>>> 处理项目: ${project.label}\x1b[0m\n`);
             
             try {
                 const projectDir = path.dirname(project.fsPath);
@@ -747,9 +978,9 @@ export function activate(context: vscode.ExtensionContext) {
                 const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || projectDir;
                 
                 // 1. 运行 ninja -t clean 清理
-                outputChannel.appendLine(`[0/3] 清理构建文件...`);
+                terminal.write(`\x1b[32m[0/3] 清理构建文件...\x1b[0m\n`);
                 const ninjaCommand = ninjaPath ? `${ninjaPath} -t clean` : `ninja -t clean`;
-                await runCommandInDirectory(ninjaCommand, projectDir, outputChannel);
+                await runCommandInDirectory(ninjaCommand, projectDir);
                 
                 // 2. 变量替换
                 let convertCommand = convertCommandTemplate
@@ -765,20 +996,20 @@ export function activate(context: vscode.ExtensionContext) {
                     convertCommand += ` --no-header-insertion`;
                 }
 
-                outputChannel.appendLine(`执行的转换命令: ${convertCommand}`);
-                outputChannel.appendLine(`[1/3] 生成 Compile Commands...`);
-                await runCommand(convertCommand, outputChannel);
+                terminal.write(`执行的转换命令: ${convertCommand}\n`);
+                terminal.write(`\x1b[32m[1/3] 生成 Compile Commands...\x1b[0m\n`);
+                await runCommand(convertCommand);
                     
-                outputChannel.appendLine(`[2/3] 执行构建脚本...`);
-                await runCommandInDirectory(buildScript, projectDir, outputChannel);
+                terminal.write(`\x1b[32m[2/3] 执行构建脚本...\x1b[0m\n`);
+                await runCommandInDirectory(buildScript, projectDir);
                 
-                outputChannel.appendLine(`>>> 项目 ${project.label} 重新编译完成.\n`);
+                terminal.write(`\x1b[32m>>> 项目 ${project.label} 重新编译完成.\x1b[0m\n`);
             } catch (error) {
-                outputChannel.appendLine(`!!! 项目 ${project.label} 重新编译失败: ${error}\n`);
+                terminal.write(`\x1b[31m!!! 项目 ${project.label} 重新编译失败: ${error}\x1b[0m\n`);
                 // 可以选择是否 continue，这里默认继续下一个
             }
         }
-        outputChannel.appendLine(`=== 重新编译流程结束 ===`);
+        terminal.write(`\n\x1b[36m=== 重新编译流程结束 ===\x1b[0m\n`);
     }));
 
     // 7. 执行清理 (仅清理构建文件)
@@ -788,15 +1019,14 @@ export function activate(context: vscode.ExtensionContext) {
             return; // 用户取消操作
         }
         
-        outputChannel.clear();
-        outputChannel.show();
+        const terminal = createOrShowTerminal();
+        terminal.write(`\x1b[36m=== 开始清理流程 ===\x1b[0m\n`);
         
         // 获取所有在队列中且被勾选的项目
         const queue = manager.getQueueItems();
         const selectedProjects = queue.filter(p => p.checkboxState === vscode.TreeItemCheckboxState.Checked);
         
-        outputChannel.appendLine(`=== 开始清理流程 ===`);
-        outputChannel.appendLine(`选中项目数: ${selectedProjects.length}`);
+        terminal.write(`选中项目数: ${selectedProjects.length}\n`);
 
         if (selectedProjects.length === 0) {
             vscode.window.showInformationMessage('没有选中要清理的项目。');
@@ -807,23 +1037,23 @@ export function activate(context: vscode.ExtensionContext) {
         const ninjaPath = config.get<string>('ninjaPath', '');
 
         for (const project of selectedProjects) {
-            outputChannel.appendLine(`>>> 处理项目: ${project.label}`);
+            terminal.write(`\n\x1b[33m>>> 处理项目: ${project.label}\x1b[0m\n`);
             
             try {
                 const projectDir = path.dirname(project.fsPath);
                 
                 // 运行 ninja -t clean 清理
-                outputChannel.appendLine(`[1/1] 清理构建文件...`);
+                terminal.write(`\x1b[32m[1/1] 清理构建文件...\x1b[0m\n`);
                 const ninjaCommand = ninjaPath ? `${ninjaPath} -t clean` : `ninja -t clean`;
-                await runCommandInDirectory(ninjaCommand, projectDir, outputChannel);
+                await runCommandInDirectory(ninjaCommand, projectDir);
                 
-                outputChannel.appendLine(`>>> 项目 ${project.label} 清理完成.\n`);
+                terminal.write(`\x1b[32m>>> 项目 ${project.label} 清理完成.\x1b[0m\n`);
             } catch (error) {
-                outputChannel.appendLine(`!!! 项目 ${project.label} 清理失败: ${error}\n`);
+                terminal.write(`\x1b[31m!!! 项目 ${project.label} 清理失败: ${error}\x1b[0m\n`);
                 // 可以选择是否 continue，这里默认继续下一个
             }
         }
-        outputChannel.appendLine(`=== 清理流程结束 ===`);
+        terminal.write(`\n\x1b[36m=== 清理流程结束 ===\x1b[0m\n`);
     }));
 }
 
