@@ -7,6 +7,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      iconv-lite:
+        specifier: ^0.7.1
+        version: 0.7.1
     devDependencies:
       '@types/mocha':
         specifier: ^10.0.10
@@ -32,9 +36,6 @@ importers:
       eslint:
         specifier: ^9.39.1
         version: 9.39.2
-      iconv-lite:
-        specifier: ^0.7.1
-        version: 0.7.1
       npm-run-all:
         specifier: ^4.1.5
         version: 4.1.5

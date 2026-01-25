@@ -297,23 +297,28 @@ class ProjectLibraryProvider implements vscode.TreeDataProvider<CbpProjectItem |
 
 // 1. 更加健壮的解码函数
 function decodeBuffer(buffer: Buffer): string {
-    const iconv = require('iconv-lite');
-    
-    // 许多现代工具(Clang/Ninja)在Windows上也输出UTF-8
-    // 但CMD默认环境经常是GBK。
-    // 策略：尝试用 UTF-8 解码，如果发现乱码字符（），则判定为 GBK。
-    const strUtf8 = iconv.decode(buffer, 'utf8');
-    
-    // 检查是否存在"替换字符" (U+FFFD)，这通常意味着UTF-8解码失败
-    if (strUtf8.includes('\uFFFD')) {
-        // 如果UTF-8解码看起来不对，尝试GBK
-        try {
-            return iconv.decode(buffer, 'gbk');
-        } catch {
-            return strUtf8; // 尽力而为
+    try {
+        const iconv = require('iconv-lite');
+        
+        // 许多现代工具(Clang/Ninja)在Windows上也输出UTF-8
+        // 但CMD默认环境经常是GBK。
+        // 策略：尝试用 UTF-8 解码，如果发现乱码字符（），则判定为 GBK。
+        const strUtf8 = iconv.decode(buffer, 'utf8');
+        
+        // 检查是否存在"替换字符" (U+FFFD)，这通常意味着UTF-8解码失败
+        if (strUtf8.includes('\uFFFD')) {
+            // 如果UTF-8解码看起来不对，尝试GBK
+            try {
+                return iconv.decode(buffer, 'gbk');
+            } catch {
+                return strUtf8; // 尽力而为
+            }
         }
+        return strUtf8;
+    } catch (error) {
+        // 如果iconv-lite不可用，直接使用UTF-8解码
+        return buffer.toString('utf8');
     }
-    return strUtf8;
 }
 
 // 2. 格式化输出：解决阶梯状换行问题
@@ -526,8 +531,40 @@ function runCommandInDirectory(cmd: string, cwd: string | undefined): Promise<vo
                     pty.writeRaw(`\r\x1b[K\x1b[32m${prefix}\x1b[0m ${shortMsg}`);
                 } else {
                     // 非进度条信息（如错误、警告、CMake输出），正常换行打印
-                    // 先打印一个 \r\n 确保不会覆盖掉当前的进度条，或者将进度条推上去
-                    pty.write(`\r\n${line}`);
+                    
+                    // 处理错误和警告信息，将相对路径转换为完整路径
+                    let processedLine = line;
+                    if (cwd) {
+                        // 支持源文件和头文件
+                        // 注意：这里加了 \\. 确保后缀名前的点被正确转义
+                        const fileExtensionPattern = '\\.(c|cpp|cc|cxx|h|hpp|hh|hxx)';
+                        
+                        // --- 修改开始 ---
+                        // 修改点：
+                        // 1. 在字符集 [] 中增加了 \\. 以支持相对路径中的点 (如 ../)
+                        // 2. 增加了 \\\\ 以更稳健地支持 Windows 反斜杠
+                        // 3. 增加了 :? 放在盘符位置，虽然通常不放在字符集里，但为了简单匹配路径体，
+                        //    我们主要扩充允许的字符：字母、数字、下划线、减号、点、斜杠、反斜杠
+                        const validPathChars = '[a-zA-Z0-9_\\-\\.\\/\\\\]';
+                        
+                        // 正则表达式：匹配文件路径 + 行号
+                        // 匹配模式：[路径] : [行号] [分隔符]
+                        const filePathPattern = new RegExp(`(${validPathChars}+${fileExtensionPattern}):(\\d+)(:|,)`, 'g');
+                        // --- 修改结束 ---
+                        
+                        processedLine = processedLine.replace(filePathPattern, (match, relPath, ext, lineNum, separator) => {
+                            try {
+                                // 将相对路径转换为完整路径
+                                // path.resolve 会自动处理 .. 和 .
+                                const fullPath = path.resolve(cwd, relPath);
+                                return `${fullPath}:${lineNum}${separator}`;
+                            } catch (e) {
+                                return match; // 如果解析失败，返回原样
+                            }
+                        });
+                    }
+                    
+                    pty.write(`\r\n${processedLine}`);
                 }
             };
 
