@@ -4,6 +4,15 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.1] - 2026-01-25
+
+### Changed
+- 错误文件路径改为绝对路径显示
+- 更新文档，明确说明 "No Header Insertion" 配置需要 clangd v21 以上版本
+
+### Fixed
+- 修复 No Header Insertion 配置在 clangd v21 以下版本会产生 lint 错误的文档说明
+
 ## [0.1.0] - 2026-01-25
 
 ### Changed

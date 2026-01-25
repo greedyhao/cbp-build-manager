@@ -46,6 +46,7 @@
 | `cbpBuildManager.convertCommand` | `{cbp2clang} {cbpFile} {compileCommands} -l ld` | 转换命令的模板 |
 | `cbpBuildManager.buildCommand` | `./build.bat` | 运行构建脚本的命令 |
 | `cbpBuildManager.ninjaPath` | `""` | ninja 可执行文件的路径，支持自动检查和更新，兼容旧版本文件夹路径设置 |
+| `cbpBuildManager.noHeaderInsertion` | `true` | 禁止 clangd 在补全代码时插入头文件（需要 clangd v21 以上版本，否则 .clangd 文件会出现 lint 错误：Unknown Completion key 'HeaderInsertion'） |
 
 ## 使用指南
 
