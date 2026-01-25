@@ -4,6 +4,11 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.0] - 2026-01-25
+
+### Changed
+- 错误文件路径改为绝对路径显示
+
 ## [0.0.10] - 2026-01-16
 ### Changed
 - 将插件输出改为 Pseudoterminal，支持 ANSI 控制符

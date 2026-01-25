@@ -20,7 +20,7 @@
 
 ### 方法 1：从 VSIX 包安装
 
-1. 下载最新的 `cbp-build-manager-0.0.10.vsix` 文件
+1. 下载最新的 `cbp-build-manager-0.1.0.vsix` 文件
 2. 打开 VS Code
 3. 按 `Ctrl+Shift+X` 打开扩展面板
 4. 点击右上角的 `...` 菜单
@@ -182,11 +182,11 @@
 
 2. **生成 VSIX 包**
    ```bash
-   pnpm exec vsce package
+   pnpm run vsix
    ```
 
 3. **输出文件**
-   - 生成的 VSIX 文件位于项目根目录：`cbp-build-manager-0.0.5.vsix`
+   - 生成的 VSIX 文件位于项目根目录：`cbp-build-manager-0.1.0.vsix`
 - 可直接安装到 VS Code 中使用
 
 ### 开发测试
