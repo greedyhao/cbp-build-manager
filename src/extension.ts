@@ -515,7 +515,7 @@ function runCommandInDirectory(cmd: string, cwd: string | undefined): Promise<vo
                     let shortMsg = rest;
                     
                     // 常见的编译命令结构匹配
-                    const fileMatch = rest.match(/([^\s"]+\.(c|cpp|cc|cxx|S|s))\b/i);
+                    const fileMatch = rest.match(/([^\s"]+\.(c|cpp|cc|cxx|S|s|ld|xm))\b/i);
                     if (fileMatch) {
                         const fileName = path.basename(fileMatch[1]); // 只取文件名，不带长路径
                         shortMsg = `Building ${fileName}`;
