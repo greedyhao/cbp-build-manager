@@ -4,6 +4,11 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.2] - 2026-01-29
+
+### Changed
+- 修复特殊文件输出编译命令的问题
+
 ## [0.1.1] - 2026-01-25
 
 ### Changed
