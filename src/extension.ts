@@ -11,6 +11,7 @@ export { CbpDataManager } from './services/DataManager';
 export { BuildQueueProvider, ProjectLibraryProvider } from './providers';
 export { BuildTerminal, createOrShowTerminal, runCommand, runCommandInDirectory } from './terminal/TerminalManager';
 export { decodeBuffer, formatOutput, compareVersions, OutputLineBuffer } from './utils';
+export { mergeCompileCommands, checkMergeCommandSupport } from './services/index';
 
 // --- 常量定义 ---
 // cbp2clangd 最小要求版本
@@ -20,6 +21,7 @@ const MIN_REQUIRED_CBP2CLANG_VERSION = '1.2.7';
 import { CbpDataManager } from './services/DataManager.js';
 import { createOrShowTerminal, runCommand, runCommandInDirectory } from './terminal/TerminalManager.js';
 import { compareVersions } from './utils/index.js';
+import { mergeCompileCommands, checkMergeCommandSupport } from './services/index.js';
 
 // --- 检查 cbp2clangd 版本 ---
 async function checkCbp2clangVersion(cbp2clangPath: string): Promise<string> {
@@ -297,7 +299,11 @@ export function activate(context: vscode.ExtensionContext) {
         const buildScript = config.get<string>('buildCommand', './build.bat');
         const ninjaPath = config.get<string>('ninjaPath', '');
         const noHeaderInsertion = config.get<boolean>('noHeaderInsertion', false);
-        terminal.write(`noHeaderInsertion 配置值 (cbpBuildManager.noHeaderInsertion): ${noHeaderInsertion}\n`);
+        const debugMode = config.get<boolean>('debug', false);
+
+        if (debugMode) {
+            terminal.write(`\x1b[36m[调试] 调试模式已开启\x1b[0m\n`);
+        }
 
         // 检查 cbp2clangd 版本
         try {
@@ -343,6 +349,10 @@ export function activate(context: vscode.ExtensionContext) {
                     convertCommand += ` --no-header-insertion`;
                 }
 
+                if (debugMode) {
+                    convertCommand += ` --debug`;
+                }
+
                 terminal.write(`执行的转换命令: ${convertCommand}\n`);
                 terminal.write(`\x1b[32m[1/2] 生成 Compile Commands...\x1b[0m\n`);
                 await runCommand(convertCommand);
@@ -356,6 +366,25 @@ export function activate(context: vscode.ExtensionContext) {
                 // 可以选择是否 continue，这里默认继续下一个
             }
         }
+
+        // 合并 compile_commands.json（如果启用）
+        const mergeEnabled = config.get<boolean>('mergeCompileCommands', false);
+        const workspaceRootPath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+        if (mergeEnabled && selectedProjects.length > 1) {
+            terminal.write(`\n\x1b[36m=== 处理 compile_commands.json 合并 ===\x1b[0m\n`);
+            try {
+                const supportMerge = await checkMergeCommandSupport(cbp2clangPath);
+                if (supportMerge) {
+                    await mergeCompileCommands(selectedProjects, cbp2clangPath, workspaceRootPath, debugMode, (msg) => terminal.write(msg));
+                } else {
+                    terminal.write(`\x1b[33m警告: cbp2clangd 不支持 merge-compile-commands 命令，请升级到最新版本\x1b[0m\n`);
+                }
+            } catch (error) {
+                terminal.write(`\x1b[33m警告: 合并 compile_commands.json 失败: ${(error as Error).message}\x1b[0m\n`);
+                // 不阻断构建流程，仅警告
+            }
+        }
+
         terminal.write(`\n\x1b[36m=== 构建流程结束 ===\x1b[0m\n`);
     }));
 
@@ -386,7 +415,11 @@ export function activate(context: vscode.ExtensionContext) {
         const buildScript = config.get<string>('buildCommand', './build.bat');
         const ninjaPath = config.get<string>('ninjaPath', '');
         const noHeaderInsertion = config.get<boolean>('noHeaderInsertion', false);
-        terminal.write(`noHeaderInsertion 配置值 (cbpBuildManager.noHeaderInsertion): ${noHeaderInsertion}\n`);
+        const debugMode = config.get<boolean>('debug', false);
+
+        if (debugMode) {
+            terminal.write(`\x1b[36m[调试] 调试模式已开启\x1b[0m\n`);
+        }
 
         // 检查 cbp2clangd 版本
         try {
@@ -437,6 +470,10 @@ export function activate(context: vscode.ExtensionContext) {
                     convertCommand += ` --no-header-insertion`;
                 }
 
+                if (debugMode) {
+                    convertCommand += ` --debug`;
+                }
+
                 terminal.write(`执行的转换命令: ${convertCommand}\n`);
                 terminal.write(`\x1b[32m[1/3] 生成 Compile Commands...\x1b[0m\n`);
                 await runCommand(convertCommand);
@@ -450,6 +487,25 @@ export function activate(context: vscode.ExtensionContext) {
                 // 可以选择是否 continue，这里默认继续下一个
             }
         }
+
+        // 合并 compile_commands.json（如果启用）
+        const mergeEnabled = config.get<boolean>('mergeCompileCommands', false);
+        const workspaceRootPath2 = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+        if (mergeEnabled && selectedProjects.length > 1) {
+            terminal.write(`\n\x1b[36m=== 处理 compile_commands.json 合并 ===\x1b[0m\n`);
+            try {
+                const supportMerge = await checkMergeCommandSupport(cbp2clangPath);
+                if (supportMerge) {
+                    await mergeCompileCommands(selectedProjects, cbp2clangPath, workspaceRootPath2, debugMode, (msg) => terminal.write(msg));
+                } else {
+                    terminal.write(`\x1b[33m警告: cbp2clangd 不支持 merge-compile-commands 命令，请升级到最新版本\x1b[0m\n`);
+                }
+            } catch (error) {
+                terminal.write(`\x1b[33m警告: 合并 compile_commands.json 失败: ${(error as Error).message}\x1b[0m\n`);
+                // 不阻断构建流程，仅警告
+            }
+        }
+
         terminal.write(`\n\x1b[36m=== 重新编译流程结束 ===\x1b[0m\n`);
     }));
 
