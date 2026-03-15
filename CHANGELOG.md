@@ -4,6 +4,26 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.0.0] - 2026-03-15
+
+### Added
+- 新增 `mergeCompileCommands` 配置项，支持自动合并多个项目的 compile_commands.json
+- 新增 `debug` 配置项，启用调试模式，显示详细调试信息并在 cbp2clangd 命令中添加 --debug 参数
+- 优化 clangd 对多工程的函数索引能力
+
+### Changed
+- 将数据模型移至 src/models/ (CbpProjectItem, DirectoryItem)
+- 将业务逻辑移至 src/services/ (CbpDataManager)
+- 将终端管理移至 src/terminal/ (BuildTerminal, createOrShowTerminal)
+- 将树视图提供者移至 src/providers/ (BuildQueueProvider, ProjectLibraryProvider)
+- 将工具函数移至 src/utils/ (decodeBuffer, formatOutput, compareVersions, OutputLineBuffer)
+- 使用构造函数注入消除全局变量依赖
+- 保持原有功能完整: Ninja进度条单行刷新、ANSI颜色渲染、GBK自动解码
+
+### Fixed
+- 修复 compile_commands.json 合并功能路径查找问题
+- 设置 cbp2clangd 最小要求版本为 v1.3.0
+
 ## [0.1.2] - 2026-01-29
 
 ### Changed

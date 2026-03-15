@@ -15,7 +15,7 @@ export { mergeCompileCommands, checkMergeCommandSupport } from './services/index
 
 // --- 常量定义 ---
 // cbp2clangd 最小要求版本
-const MIN_REQUIRED_CBP2CLANG_VERSION = '1.2.7';
+const MIN_REQUIRED_CBP2CLANG_VERSION = '1.3.0';
 
 // Import from modules
 import { CbpDataManager } from './services/DataManager.js';

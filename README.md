@@ -15,12 +15,13 @@
 - **构建输出**：使用 Pseudoterminal 在终端中显示日志，支持 ANSI 控制符和彩色输出
 - **重新编译功能**：先清理后构建，提高开发效率
 - **单独清理功能**：可单独运行清理命令，方便管理构建文件
+- **compile_commands.json 合并**：自动合并多个项目的 compile_commands.json，优化 clangd 跨工程索引
 
 ## 安装方法
 
 ### 方法 1：从 VSIX 包安装
 
-1. 下载最新的 `cbp-build-manager-0.1.2.vsix` 文件
+1. 下载最新的 `cbp-build-manager-1.0.0.vsix` 文件
 2. 打开 VS Code
 3. 按 `Ctrl+Shift+X` 打开扩展面板
 4. 点击右上角的 `...` 菜单
@@ -47,6 +48,8 @@
 | `cbpBuildManager.buildCommand` | `./build.bat` | 运行构建脚本的命令 |
 | `cbpBuildManager.ninjaPath` | `""` | ninja 可执行文件的路径，支持自动检查和更新，兼容旧版本文件夹路径设置 |
 | `cbpBuildManager.noHeaderInsertion` | `true` | 禁止 clangd 在补全代码时插入头文件（需要 clangd v21 以上版本，否则 .clangd 文件会出现 lint 错误：Unknown Completion key 'HeaderInsertion'） |
+| `cbpBuildManager.mergeCompileCommands` | `false` | 构建完成后自动合并所有项目的 compile_commands.json 到最后一个项目，优化 clangd 对多工程的函数索引（需要 cbp2clangd 支持 merge-compile-commands 命令） |
+| `cbpBuildManager.debug` | `false` | 启用调试模式，显示详细的调试信息，并在 cbp2clangd 命令中添加 --debug 参数 |
 
 ## 使用指南
 
@@ -97,7 +100,7 @@
 当你点击构建按钮时，扩展会执行以下步骤：
 
 1. **读取配置**：获取 cbp2clang 和命令的设置
-2. **检查 cbp2clangd 版本**：确保 cbp2clangd 版本兼容（最小要求：v1.2.7）
+2. **检查 cbp2clangd 版本**：确保 cbp2clangd 版本兼容（最小要求：v1.3.0）
 3. **生成命令**：为**构建队列**中勾选的每个项目创建转换命令，使用 VSCode 工作区路径作为 compile_commands.json 输出路径
 4. **运行转换**：执行 cbp2clang 生成 compile_commands.json，用于 clangd 插件索引项目
 5. **执行构建脚本**：运行配置的构建脚本（默认：./build.bat）
@@ -187,7 +190,7 @@
    ```
 
 3. **输出文件**
-   - 生成的 VSIX 文件位于项目根目录：`cbp-build-manager-0.1.2.vsix`
+   - 生成的 VSIX 文件位于项目根目录：`cbp-build-manager-x.x.x.vsix`
 - 可直接安装到 VS Code 中使用
 
 ### 开发测试
