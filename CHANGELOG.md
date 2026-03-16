@@ -4,6 +4,12 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.0.1] - 2026-03-16
+
+### Changed
+- 将 VS Code 最低版本要求从 1.64.0 提升到 1.79.0
+- 默认开启 `mergeCompileCommands`
+
 ## [1.0.0] - 2026-03-15
 
 ### Added
