@@ -4,6 +4,13 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.1.0] - 2026-03-17
+
+### Added
+- 新增芯片系列筛选功能，支持按芯片系列（如 bt5790、bt5690）筛选项目资源库
+- 自动识别项目路径中的芯片系列标识（`project/` 文件夹后的第一个文件夹名）
+- 筛选状态以工作区级别持久化保存，不同项目文件夹可以有独立的筛选配置
+
 ## [1.0.1] - 2026-03-16
 
 ### Changed

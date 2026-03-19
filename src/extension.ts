@@ -258,6 +258,43 @@ export function activate(context: vscode.ExtensionContext) {
         }
     }));
 
+    // 按芯片系列筛选
+    context.subscriptions.push(vscode.commands.registerCommand('cbp-build-manager.filterByChip', async () => {
+        const chips = manager.getAvailableChips();
+
+        if (chips.length === 0) {
+            vscode.window.showInformationMessage('未检测到芯片系列');
+            return;
+        }
+
+        const currentFilter = manager.getChipFilter();
+        const items: vscode.QuickPickItem[] = [
+            {
+                label: '$(clear-all) 显示全部',
+                description: currentFilter === null ? '当前选择' : '',
+                detail: '显示所有项目'
+            },
+            ...chips.map(chip => ({
+                label: `$(chip) ${chip}`,
+                description: currentFilter === chip ? '当前选择' : '',
+                detail: `只显示 ${chip} 系列的项目`
+            }))
+        ];
+
+        const selected = await vscode.window.showQuickPick(items, {
+            placeHolder: '选择要筛选的芯片系列'
+        });
+
+        if (selected) {
+            if (selected.label.includes('显示全部')) {
+                manager.setChipFilter(null);
+            } else {
+                const chipName = selected.label.replace('$(chip) ', '');
+                manager.setChipFilter(chipName);
+            }
+        }
+    }));
+
     // 3. 从构建列表移除 (上方 Remove)
     context.subscriptions.push(vscode.commands.registerCommand('cbp-build-manager.removeFromBuild', (item?: any) => {
         if (item) {

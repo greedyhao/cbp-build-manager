@@ -8,6 +8,7 @@
 - **双视图管理**：
   - **构建队列**：显示已选择的项目，支持拖放排序和复选框选择
   - **项目资源库**：按文件夹层级显示可用项目，自动隐藏已在队列中的项目
+- **芯片系列筛选**：智能识别项目路径中的芯片系列（如 bt5790、bt5690），支持按芯片筛选显示项目
 - **拖放操作**：在构建队列中拖动来控制构建顺序
 - **cbp2clangd 版本检查**：自动检查 cbp2clangd 版本，确保使用兼容版本
 - **Ninja 路径配置**：支持自动检查和更新 Ninja 路径，兼容旧版本设置
@@ -46,10 +47,10 @@
 | `cbpBuildManager.cbp2clangPath` | `cbp2clang` | cbp2clang 可执行文件的路径，可从 [GitHub](https://github.com/greedyhao/cbp2clangd) 下载 |
 | `cbpBuildManager.convertCommand` | `{cbp2clang} {cbpFile} {compileCommands} -l ld` | 转换命令的模板 |
 | `cbpBuildManager.buildCommand` | `./build.bat` | 运行构建脚本的命令 |
-| `cbpBuildManager.ninjaPath` | `""` | ninja 可执行文件的路径，支持自动检查和更新，兼容旧版本文件夹路径设置 |
-| `cbpBuildManager.noHeaderInsertion` | `true` | 禁止 clangd 在补全代码时插入头文件（需要 clangd v21 以上版本，否则 .clangd 文件会出现 lint 错误：Unknown Completion key 'HeaderInsertion'） |
-| `cbpBuildManager.mergeCompileCommands` | `false` | 构建完成后自动合并所有项目的 compile_commands.json 到最后一个项目，优化 clangd 对多工程的函数索引（需要 cbp2clangd 支持 merge-compile-commands 命令） |
-| `cbpBuildManager.debug` | `false` | 启用调试模式，显示详细的调试信息，并在 cbp2clangd 命令中添加 --debug 参数 |
+| `cbpBuildManager.ninjaPath` | `""` | ninja 可执行文件的路径 |
+| `cbpBuildManager.noHeaderInsertion` | `true` | 禁止 clangd 在补全代码时插入头文件（需要 clangd v21+） |
+| `cbpBuildManager.mergeCompileCommands` | `true` | 自动合并多个项目的 compile_commands.json，优化 clangd 跨工程索引 |
+| `cbpBuildManager.debug` | `false` | 启用调试模式，显示详细的调试信息 |
 
 ## 使用指南
 
@@ -72,6 +73,21 @@
 1. 在下方的**项目资源库**视图中浏览可用项目
 2. 选择要构建的项目（支持多选）
 3. 点击 **添加到构建** 按钮（➕）将项目添加到上方的**构建队列**
+
+#### 芯片系列筛选
+
+当项目路径中包含芯片系列标识时（如 `lib/baseband/project/bt5790/baseband.cbp`），可以使用筛选功能：
+
+1. 点击**项目资源库**标题栏的 **筛选** 按钮（🔍）
+2. 从下拉列表中选择要筛选的芯片系列（如 bt5790）
+3. 资源库将只显示：
+   - 选中芯片系列的项目（如 `project/bt5790/` 下的项目）
+   - 没有芯片系列标识的项目（如 `app/project/watch320/app.cbp`）
+4. 选择 **显示全部** 可取消筛选
+
+**芯片识别规则**：扩展会自动识别路径中 `project/` 文件夹后的第一个文件夹名作为芯片系列标识。
+
+**筛选状态保存**：筛选设置会保存在工作区级别，每个项目文件夹可以有独立的筛选配置。
 
 #### 配置构建队列
 

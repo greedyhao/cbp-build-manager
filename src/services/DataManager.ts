@@ -10,6 +10,9 @@ export class CbpDataManager {
     // 下方：所有的项目缓存 (用于计算差异)
     private allDetectedProjects: string[] = []; // 存 fsPath
 
+    // 芯片系列筛选
+    private chipFilter: string | null = null; // null 表示显示全部
+
     // 状态持久化
     private context: vscode.ExtensionContext | null = null;
 
@@ -31,6 +34,9 @@ export class CbpDataManager {
         const savedQueuePaths = this.context.globalState.get<string[]>('buildQueueOrder') || [];
         const savedCheckState = this.context.globalState.get<Record<string, boolean>>('projectCheckState') || {};
 
+        // 加载芯片筛选状态（工作区级别）
+        this.chipFilter = this.context.workspaceState.get<string | null>('chipFilter') || null;
+
         // 重建对象
         this.buildQueue = savedQueuePaths.map(fsPath => {
             const name = path.basename(fsPath, '.cbp');
@@ -51,6 +57,9 @@ export class CbpDataManager {
         const checkState: Record<string, boolean> = {};
         this.buildQueue.forEach(p => checkState[p.fsPath] = (p.checkboxState === vscode.TreeItemCheckboxState.Checked));
         this.context.globalState.update('projectCheckState', checkState);
+
+        // 3. 保存芯片筛选状态（工作区级别）
+        this.context.workspaceState.update('chipFilter', this.chipFilter);
     }
 
     // --- 业务逻辑 ---
@@ -76,7 +85,59 @@ export class CbpDataManager {
     // 获取资源库 (下方列表) - 自动排除已在队列中的项目
     getAvailableItems(): string[] {
         const queuedPaths = new Set(this.buildQueue.map(p => p.fsPath));
-        return this.allDetectedProjects.filter(p => !queuedPaths.has(p));
+        let available = this.allDetectedProjects.filter(p => !queuedPaths.has(p));
+
+        // 应用芯片筛选
+        if (this.chipFilter) {
+            available = available.filter(p => this.matchesChipFilter(p));
+        }
+
+        return available;
+    }
+
+    // 检查项目路径是否匹配芯片筛选
+    private matchesChipFilter(projectPath: string): boolean {
+        if (!this.chipFilter) {return true;}
+
+        const chipName = this.extractChipName(projectPath);
+        // 如果项目没有芯片名称，则显示（没有相同芯片名的工程）
+        // 如果项目有芯片名称，则必须匹配筛选器
+        return !chipName || chipName === this.chipFilter;
+    }
+
+    // 从项目路径中提取芯片名称
+    private extractChipName(projectPath: string): string | null {
+        const parts = projectPath.split(path.sep);
+        // 查找 project 文件夹后的第一个文件夹名
+        const projectIndex = parts.findIndex(p => p === 'project');
+        if (projectIndex !== -1 && projectIndex < parts.length - 1) {
+            return parts[projectIndex + 1];
+        }
+        return null;
+    }
+
+    // 获取所有可用的芯片系列
+    getAvailableChips(): string[] {
+        const chips = new Set<string>();
+        this.allDetectedProjects.forEach(p => {
+            const chip = this.extractChipName(p);
+            if (chip) {
+                chips.add(chip);
+            }
+        });
+        return Array.from(chips).sort();
+    }
+
+    // 设置芯片筛选
+    setChipFilter(chip: string | null) {
+        this.chipFilter = chip;
+        this.saveState();
+        this._onDidChangeTreeData.fire();
+    }
+
+    // 获取当前芯片筛选
+    getChipFilter(): string | null {
+        return this.chipFilter;
     }
 
     // 添加到队列
