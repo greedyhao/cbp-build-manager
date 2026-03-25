@@ -110,10 +110,22 @@ export function processBuildCommandPath(line: string, cwd: string): string {
 
     return line.replace(filePathPattern, (match, relPath, ext, lineNum, separator) => {
         try {
-            // 将相对路径转换为完整路径
-            // path.resolve 会自动处理 .. 和 .
             const pathModule = require('path');
-            const fullPath = pathModule.resolve(cwd, relPath);
+
+            // 检查路径是否已经是绝对路径（Windows 盘符格式如 D:\\ 或 D:/）
+            const isWindowsAbsolute = /^[a-zA-Z]:[\\\/]/.test(relPath);
+            const isUnixAbsolute = relPath.startsWith('/');
+
+            let fullPath: string;
+            if (isWindowsAbsolute || isUnixAbsolute) {
+                // 如果已经是绝对路径，直接使用，避免与 cwd 拼接导致双重盘符
+                fullPath = relPath;
+            } else {
+                // 将相对路径转换为完整路径
+                // path.resolve 会自动处理 .. 和 .
+                fullPath = pathModule.resolve(cwd, relPath);
+            }
+
             return `${fullPath}:${lineNum}${separator}`;
         } catch (e) {
             return match; // 如果解析失败，返回原样

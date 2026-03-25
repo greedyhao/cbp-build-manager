@@ -142,6 +142,34 @@ suite('Utils Test Suite', () => {
         assert.ok(processBuildCommandPath(hFile, cwd).includes('C:/projects/myproject/include/header.h:5'));
     });
 
+    test('processBuildCommandPath: Windows absolute path should not double prefix', () => {
+        const cwd = 'D:/Project/569x_pan_yyc/app/platform/libs/net';
+
+        // 模拟 gcc/clang 输出的 Windows 绝对路径（正斜杠）
+        const line1 = 'D:/Project/569x_pan_yyc/app/platform/libs/net/modules/lwip/src/core/dns.c:10: error';
+        const result1 = processBuildCommandPath(line1, cwd);
+        // 不应该产生 D:d: 这样的双重盘符
+        assert.ok(!result1.includes('D:d:'), `Result should not contain D:d:, got: ${result1}`);
+        assert.ok(result1.includes('D:/Project/569x_pan_yyc/app/platform/libs/net/modules/lwip/src/core/dns.c:10'));
+
+        // 模拟 Windows 反斜杠路径
+        const line2 = 'd:\\Project\\569x_pan_yyc\\app\\test.cpp:20: warning';
+        const result2 = processBuildCommandPath(line2, cwd);
+        assert.ok(!result2.includes('D:d:'), `Result should not contain D:d:, got: ${result2}`);
+        assert.ok(result2.includes('d:\\Project\\569x_pan_yyc\\app\\test.cpp:20') || result2.includes('D:\\Project\\569x_pan_yyc\\app\\test.cpp:20'));
+    });
+
+    test('processBuildCommandPath: Unix absolute path should not be prefixed', () => {
+        const cwd = '/home/user/project';
+
+        // Unix 绝对路径
+        const line = '/usr/include/stdio.h:15: note';
+        const result = processBuildCommandPath(line, cwd);
+        // 不应该与 cwd 拼接
+        assert.ok(result.includes('/usr/include/stdio.h:15'));
+        assert.ok(!result.includes('/home/user/project/usr/include'));
+    });
+
     // ==================== parseNinjaProgress ====================
 
     test('parseNinjaProgress: progress line', () => {
