@@ -172,6 +172,11 @@
           "type": "boolean",
           "default": false,
           "description": "启用调试模式，显示详细的调试信息，并在 cbp2clangd 命令中添加 --debug 参数"
+        },
+        "cbpBuildManager.stopOnFailure": {
+          "type": "boolean",
+          "default": true,
+          "description": "当某个项目编译失败时，停止后续项目的编译（适用于批量编译场景）"
         }
       }
     }

@@ -337,6 +337,7 @@ export function activate(context: vscode.ExtensionContext) {
         const ninjaPath = config.get<string>('ninjaPath', '');
         const noHeaderInsertion = config.get<boolean>('noHeaderInsertion', false);
         const debugMode = config.get<boolean>('debug', false);
+        const stopOnFailure = config.get<boolean>('stopOnFailure', false);
 
         if (debugMode) {
             terminal.write(`\x1b[36m[调试] 调试模式已开启\x1b[0m\n`);
@@ -400,7 +401,11 @@ export function activate(context: vscode.ExtensionContext) {
                 terminal.write(`\x1b[32m>>> 项目 ${project.label} 完成.\x1b[0m\n`);
             } catch (error) {
                 terminal.write(`\x1b[31m!!! 项目 ${project.label} 失败: ${error}\x1b[0m\n`);
-                // 可以选择是否 continue，这里默认继续下一个
+                if (stopOnFailure) {
+                    terminal.write(`\x1b[31m>>> 编译失败，停止后续项目\x1b[0m\n`);
+                    break;
+                }
+                // 继续下一个项目
             }
         }
 
@@ -453,6 +458,7 @@ export function activate(context: vscode.ExtensionContext) {
         const ninjaPath = config.get<string>('ninjaPath', '');
         const noHeaderInsertion = config.get<boolean>('noHeaderInsertion', false);
         const debugMode = config.get<boolean>('debug', false);
+        const stopOnFailure = config.get<boolean>('stopOnFailure', false);
 
         if (debugMode) {
             terminal.write(`\x1b[36m[调试] 调试模式已开启\x1b[0m\n`);
@@ -521,7 +527,11 @@ export function activate(context: vscode.ExtensionContext) {
                 terminal.write(`\x1b[32m>>> 项目 ${project.label} 重新编译完成.\x1b[0m\n`);
             } catch (error) {
                 terminal.write(`\x1b[31m!!! 项目 ${project.label} 重新编译失败: ${error}\x1b[0m\n`);
-                // 可以选择是否 continue，这里默认继续下一个
+                if (stopOnFailure) {
+                    terminal.write(`\x1b[31m>>> 编译失败，停止后续项目\x1b[0m\n`);
+                    break;
+                }
+                // 继续下一个项目
             }
         }
 
