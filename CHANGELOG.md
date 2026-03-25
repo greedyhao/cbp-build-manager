@@ -4,6 +4,15 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.1.1] - 2026-03-26
+
+### Added
+- 增加出错停止编译的功能
+
+### Fixed
+- 修复 Windows 绝对路径处理时产生的双重盘符问题（如 `D:d:`）
+- 当编译器输出中已经是 Windows 绝对路径时，不再与 cwd 拼接
+
 ## [1.1.0] - 2026-03-17
 
 ### Added
