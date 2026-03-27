@@ -4,6 +4,11 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.1.2] - 2026-03-27
+
+### Fixed
+- 修复构建队列拖拽时无法将项目拖到队尾的问题，现在可以将项目直接拖动到列表末尾
+
 ## [1.1.1] - 2026-03-26
 
 ### Added
