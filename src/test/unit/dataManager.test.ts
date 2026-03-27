@@ -107,6 +107,37 @@ suite('DataManager Test Suite', () => {
         assert.strictEqual(newQueue[2].fsPath, 'C:/project/test1.cbp');
     });
 
+    test('moveQueueItem: should move items to end when target is undefined', () => {
+        manager.setAllDetectedProjects(['C:/project/test1.cbp', 'C:/project/test2.cbp', 'C:/project/test3.cbp']);
+        manager.addToQueue(['C:/project/test1.cbp', 'C:/project/test2.cbp', 'C:/project/test3.cbp']);
+
+        const queueItems = manager.getQueueItems();
+        // Move test1 to end (no target)
+        manager.moveQueueItem([queueItems[0]], undefined);
+
+        const newQueue = manager.getQueueItems();
+        assert.strictEqual(newQueue.length, 3);
+        assert.strictEqual(newQueue[0].fsPath, 'C:/project/test2.cbp');
+        assert.strictEqual(newQueue[1].fsPath, 'C:/project/test3.cbp');
+        assert.strictEqual(newQueue[2].fsPath, 'C:/project/test1.cbp');
+    });
+
+    test('moveQueueItem: should move multiple items to end when target is undefined', () => {
+        manager.setAllDetectedProjects(['C:/project/test1.cbp', 'C:/project/test2.cbp', 'C:/project/test3.cbp', 'C:/project/test4.cbp']);
+        manager.addToQueue(['C:/project/test1.cbp', 'C:/project/test2.cbp', 'C:/project/test3.cbp', 'C:/project/test4.cbp']);
+
+        const queueItems = manager.getQueueItems();
+        // Move test1 and test2 to end (no target)
+        manager.moveQueueItem([queueItems[0], queueItems[1]], undefined);
+
+        const newQueue = manager.getQueueItems();
+        assert.strictEqual(newQueue.length, 4);
+        assert.strictEqual(newQueue[0].fsPath, 'C:/project/test3.cbp');
+        assert.strictEqual(newQueue[1].fsPath, 'C:/project/test4.cbp');
+        assert.strictEqual(newQueue[2].fsPath, 'C:/project/test1.cbp');
+        assert.strictEqual(newQueue[3].fsPath, 'C:/project/test2.cbp');
+    });
+
     // ==================== getAvailableItems ====================
 
     test('getAvailableItems: should return items not in queue', () => {

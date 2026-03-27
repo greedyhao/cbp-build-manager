@@ -34,7 +34,7 @@ export class BuildQueueProvider implements vscode.TreeDataProvider<CbpProjectIte
 
     handleDrop(target: CbpProjectItem | undefined, dataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): void | Thenable<void> {
         const transferItem = dataTransfer.get('application/vnd.code.tree.cbpBuildQueue');
-        if (!transferItem || !target) {return;}
+        if (!transferItem) {return;}
 
         const sourcePaths: string[] = transferItem.value;
         const queue = this.manager.getQueueItems();

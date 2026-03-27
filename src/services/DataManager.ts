@@ -167,23 +167,22 @@ export class CbpDataManager {
     }
 
     // 队列排序 (拖拽支持)
-    moveQueueItem(sourceItems: CbpProjectItem[], target: CbpProjectItem) {
-        const targetIndex = this.buildQueue.findIndex(p => p.fsPath === target.fsPath);
-        if (targetIndex === -1) {return;}
-
+    moveQueueItem(sourceItems: CbpProjectItem[], target?: CbpProjectItem) {
         // 提取需要移动的项目
         const itemsToMove = sourceItems.filter(s => this.buildQueue.some(inQ => inQ.fsPath === s.fsPath));
 
         // 从原数组中移除
         const newQueue = this.buildQueue.filter(p => !itemsToMove.some(m => m.fsPath === p.fsPath));
 
-        // 插入到新位置
-        // 注意：如果要插入到 target 之后，需要自行调整 index逻辑，这里简单实现插入到 target 之前/位置
-        // 为了更精准的拖拽体验，这里假设插入到 target 位置
-        let insertIndex = newQueue.findIndex(p => p.fsPath === target.fsPath);
-        if (insertIndex === -1) {insertIndex = newQueue.length;}
-
-        newQueue.splice(insertIndex, 0, ...itemsToMove);
+        if (target) {
+            // 插入到目标位置
+            let insertIndex = newQueue.findIndex(p => p.fsPath === target.fsPath);
+            if (insertIndex === -1) {insertIndex = newQueue.length;}
+            newQueue.splice(insertIndex, 0, ...itemsToMove);
+        } else {
+            // 无目标（拖到队尾），添加到末尾
+            newQueue.push(...itemsToMove);
+        }
 
         this.buildQueue = newQueue;
         this.saveState();
