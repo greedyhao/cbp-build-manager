@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 import { CbpProjectItem } from '../models/items';
 
 // --- 数据管理器 (核心逻辑) ---
@@ -46,20 +47,20 @@ export class CbpDataManager {
         });
     }
 
-    protected saveState() {
+    protected async saveState() {
         if (!this.context) {return;}
 
         // 1. 保存队列顺序
         const queuePaths = this.buildQueue.map(p => p.fsPath);
-        this.context.globalState.update('buildQueueOrder', queuePaths);
+        await this.context.globalState.update('buildQueueOrder', queuePaths);
 
         // 2. 保存勾选状态
         const checkState: Record<string, boolean> = {};
         this.buildQueue.forEach(p => checkState[p.fsPath] = (p.checkboxState === vscode.TreeItemCheckboxState.Checked));
-        this.context.globalState.update('projectCheckState', checkState);
+        await this.context.globalState.update('projectCheckState', checkState);
 
         // 3. 保存芯片筛选状态（工作区级别）
-        this.context.workspaceState.update('chipFilter', this.chipFilter);
+        await this.context.workspaceState.update('chipFilter', this.chipFilter);
     }
 
     // --- 业务逻辑 ---
@@ -70,9 +71,16 @@ export class CbpDataManager {
         this.allDetectedProjects = cbpFiles.map(f => f.fsPath);
 
         // 清理构建队列中已经不存在的文件
+        // 逐个检查文件是否存在于磁盘，而不是依赖 findFiles 的结果
+        // 避免 VS Code 启动时工作区索引未完成导致队列被误清空
+        const beforeCount = this.buildQueue.length;
         this.buildQueue = this.buildQueue.filter(item =>
-            this.allDetectedProjects.includes(item.fsPath)
+            fs.existsSync(item.fsPath)
         );
+
+        if (this.buildQueue.length !== beforeCount) {
+            await this.saveState();
+        }
 
         this._onDidChangeTreeData.fire();
     }

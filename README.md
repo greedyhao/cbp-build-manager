@@ -14,6 +14,7 @@
 - **Ninja 路径配置**：支持自动检查和更新 Ninja 路径，兼容旧版本设置
 - **可自定义命令**：配置 cbp2clang 路径和构建脚本
 - **构建输出**：使用 Pseudoterminal 在终端中显示日志，支持 ANSI 控制符和彩色输出
+- **队列持久化**：构建队列自动保存，重启 VS Code 后恢复队列顺序和勾选状态
 - **重新编译功能**：先清理后构建，提高开发效率
 - **单独清理功能**：可单独运行清理命令，方便管理构建文件
 - **compile_commands.json 合并**：自动合并多个项目的 compile_commands.json，优化 clangd 跨工程索引
@@ -51,6 +52,7 @@
 | `cbpBuildManager.noHeaderInsertion` | `true` | 禁止 clangd 在补全代码时插入头文件（需要 clangd v21+） |
 | `cbpBuildManager.mergeCompileCommands` | `true` | 自动合并多个项目的 compile_commands.json，优化 clangd 跨工程索引 |
 | `cbpBuildManager.debug` | `false` | 启用调试模式，显示详细的调试信息 |
+| `cbpBuildManager.stopOnFailure` | `true` | 编译失败时停止后续项目的编译 |
 
 ## 使用指南
 
