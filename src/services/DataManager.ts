@@ -14,8 +14,8 @@ export class CbpDataManager {
     // 芯片系列筛选
     private chipFilter: string | null = null; // null 表示显示全部
 
-    // 状态持久化
-    private context: vscode.ExtensionContext | null = null;
+    // 持久化文件路径
+    private stateFilePath: string | null = null;
 
     private _onDidChangeTreeData = new vscode.EventEmitter<void>();
     readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
@@ -23,44 +23,76 @@ export class CbpDataManager {
     constructor() {}
 
     setContext(context: vscode.ExtensionContext) {
-        this.context = context;
+        // 设置工作区状态文件路径
+        const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (workspacePath) {
+            this.stateFilePath = path.join(workspacePath, '.cbp-build', 'queue.json');
+        }
         this.loadState();
+    }
+
+    // 获取持久化文件目录
+    private getStateDir(): string | null {
+        if (!this.stateFilePath) {return null;}
+        return path.dirname(this.stateFilePath);
     }
 
     // 加载状态
     private loadState() {
-        if (!this.context) {return;}
+        if (!this.stateFilePath) {return;}
 
-        // 加载构建队列 (保存的是 fsPath 的有序数组)
-        const savedQueuePaths = this.context.globalState.get<string[]>('buildQueueOrder') || [];
-        const savedCheckState = this.context.globalState.get<Record<string, boolean>>('projectCheckState') || {};
+        try {
+            if (!fs.existsSync(this.stateFilePath)) {return;}
 
-        // 加载芯片筛选状态（工作区级别）
-        this.chipFilter = this.context.workspaceState.get<string | null>('chipFilter') || null;
+            const content = fs.readFileSync(this.stateFilePath, 'utf-8');
+            const state = JSON.parse(content);
 
-        // 重建对象
-        this.buildQueue = savedQueuePaths.map(fsPath => {
-            const name = path.basename(fsPath, '.cbp');
-            const isChecked = savedCheckState[fsPath] ?? true;
-            const item = new CbpProjectItem(name, fsPath, isChecked, vscode.TreeItemCollapsibleState.None, true);
-            return item;
-        });
+            // 加载构建队列
+            const savedQueuePaths: string[] = state.queuePaths || [];
+            const savedCheckState: Record<string, boolean> = state.checkState || {};
+
+            // 重建对象
+            this.buildQueue = savedQueuePaths.map(fsPath => {
+                // 检查文件是否仍存在
+                if (!fs.existsSync(fsPath)) {return null;}
+                const name = path.basename(fsPath, '.cbp');
+                const isChecked = savedCheckState[fsPath] ?? true;
+                return new CbpProjectItem(name, fsPath, isChecked, vscode.TreeItemCollapsibleState.None, true);
+            }).filter((item): item is CbpProjectItem => item !== null);
+
+            // 加载芯片筛选状态
+            this.chipFilter = state.chipFilter ?? null;
+        } catch (error) {
+            // 读取失败时使用空状态
+            console.error('[CbpDataManager] Failed to load state:', error);
+        }
     }
 
-    protected async saveState() {
-        if (!this.context) {return;}
+    protected saveState() {
+        if (!this.stateFilePath) {return;}
 
-        // 1. 保存队列顺序
-        const queuePaths = this.buildQueue.map(p => p.fsPath);
-        await this.context.globalState.update('buildQueueOrder', queuePaths);
+        try {
+            // 确保目录存在
+            const dir = this.getStateDir();
+            if (dir && !fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+            }
 
-        // 2. 保存勾选状态
-        const checkState: Record<string, boolean> = {};
-        this.buildQueue.forEach(p => checkState[p.fsPath] = (p.checkboxState === vscode.TreeItemCheckboxState.Checked));
-        await this.context.globalState.update('projectCheckState', checkState);
+            // 保存队列顺序和勾选状态
+            const queuePaths = this.buildQueue.map(p => p.fsPath);
+            const checkState: Record<string, boolean> = {};
+            this.buildQueue.forEach(p => checkState[p.fsPath] = (p.checkboxState === vscode.TreeItemCheckboxState.Checked));
 
-        // 3. 保存芯片筛选状态（工作区级别）
-        await this.context.workspaceState.update('chipFilter', this.chipFilter);
+            const state = {
+                queuePaths,
+                checkState,
+                chipFilter: this.chipFilter
+            };
+
+            fs.writeFileSync(this.stateFilePath, JSON.stringify(state, null, 2), 'utf-8');
+        } catch (error) {
+            console.error('[CbpDataManager] Failed to save state:', error);
+        }
     }
 
     // --- 业务逻辑 ---
@@ -69,19 +101,6 @@ export class CbpDataManager {
     async scanWorkspace() {
         const cbpFiles = await vscode.workspace.findFiles('**/*.cbp');
         this.allDetectedProjects = cbpFiles.map(f => f.fsPath);
-
-        // 清理构建队列中已经不存在的文件
-        // 逐个检查文件是否存在于磁盘，而不是依赖 findFiles 的结果
-        // 避免 VS Code 启动时工作区索引未完成导致队列被误清空
-        const beforeCount = this.buildQueue.length;
-        this.buildQueue = this.buildQueue.filter(item =>
-            fs.existsSync(item.fsPath)
-        );
-
-        if (this.buildQueue.length !== beforeCount) {
-            await this.saveState();
-        }
-
         this._onDidChangeTreeData.fire();
     }
 
@@ -217,5 +236,10 @@ export class CbpDataManager {
     // 设置构建队列（用于测试）
     setBuildQueue(queue: CbpProjectItem[]) {
         this.buildQueue = queue;
+    }
+
+    // 设置状态文件路径（用于测试）
+    setStateFilePath(filePath: string) {
+        this.stateFilePath = filePath;
     }
 }

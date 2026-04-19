@@ -79,11 +79,12 @@ cbp-build-manager/
   - `removeFromQueue()`: 从队列移除项目
   - `moveQueueItem()`: 调整队列顺序（拖拽支持）
   - `updateCheckState()`: 更新项目勾选状态
-  - `saveState()` / `loadState()`: 状态持久化
+  - `saveState()` / `loadState()`: 状态持久化到 `.cbp-build/queue.json`
 
 - **数据结构**:
   - `buildQueue`: 有序的构建队列
   - `allDetectedProjects`: 所有检测到的项目路径
+  - `stateFilePath`: 持久化文件路径
 
 ### 3. 终端管理 (terminal/)
 
@@ -140,7 +141,7 @@ cbp-build-manager/
 ```
 activate()
   ├─> CbpDataManager.setContext()
-  │     └─> loadState() (从 globalState 恢复状态)
+  │     └─> loadState() (从 .cbp-build/queue.json 恢复状态)
   ├─> 创建 BuildQueueProvider
   ├─> 创建 ProjectLibraryProvider
   ├─> 注册 TreeView
@@ -165,9 +166,17 @@ buildSelected 命令
 用户操作 (添加/移除/排序/勾选)
   ├─> 更新内存中的 buildQueue
   ├─> saveState()
-  │     ├─> 保存队列顺序 (buildQueueOrder)
-  │     └─> 保存勾选状态 (projectCheckState)
+  │     └─> 写入 .cbp-build/queue.json 文件
   └─> 触发 TreeView 刷新
+```
+
+**持久化文件格式** (`.cbp-build/queue.json`):
+```json
+{
+  "queuePaths": ["path/to/project1.cbp", "path/to/project2.cbp"],
+  "checkState": { "path/to/project1.cbp": true },
+  "chipFilter": "bt5790"
+}
 ```
 
 ## 配置项
@@ -179,6 +188,9 @@ buildSelected 命令
 | `cbpBuildManager.buildCommand` | string | `./build.bat` | 构建脚本命令 |
 | `cbpBuildManager.ninjaPath` | string | `` | Ninja 可执行文件路径 |
 | `cbpBuildManager.noHeaderInsertion` | boolean | `true` | 禁止 clangd 自动插入头文件 |
+| `cbpBuildManager.mergeCompileCommands` | boolean | `true` | 自动合并 compile_commands.json |
+| `cbpBuildManager.debug` | boolean | `false` | 启用调试模式 |
+| `cbpBuildManager.stopOnFailure` | boolean | `true` | 编译失败时停止后续编译 |
 
 ## 命令列表
 

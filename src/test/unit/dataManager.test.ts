@@ -1,40 +1,25 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 import { CbpDataManager } from '../../services';
-
-// Mock vscode.Memento
-class MockMemento {
-    private data: Record<string, unknown> = {};
-
-    get<T>(key: string, defaultValue?: T): T | undefined {
-        return (this.data[key] as T) ?? defaultValue;
-    }
-
-    update(key: string, value: unknown): Thenable<void> {
-        this.data[key] = value;
-        return Promise.resolve();
-    }
-}
-
-// Mock vscode.ExtensionContext
-function createMockContext(): vscode.ExtensionContext {
-    const mockMemento = new MockMemento();
-    return {
-        globalState: mockMemento,
-        subscriptions: [],
-        workspaceState: mockMemento,
-        extensionPath: '',
-        asAbsolutePath: (relativePath: string) => relativePath,
-    } as unknown as vscode.ExtensionContext;
-}
 
 suite('DataManager Test Suite', () => {
     let manager: CbpDataManager;
-    let mockContext: vscode.ExtensionContext;
+    let tempDir: string;
 
     setup(() => {
         manager = new CbpDataManager();
-        mockContext = createMockContext();
+        // Create temp directory for testing
+        tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cbp-test-'));
+    });
+
+    teardown(() => {
+        // Clean up temp directory
+        if (fs.existsSync(tempDir)) {
+            fs.rmSync(tempDir, { recursive: true, force: true });
+        }
     });
 
     // ==================== addToQueue ====================
@@ -160,8 +145,7 @@ suite('DataManager Test Suite', () => {
 
     // ==================== updateCheckState ====================
 
-    test('updateCheckState: should update checkbox state', async () => {
-        manager.setContext(mockContext);
+    test('updateCheckState: should update checkbox state', () => {
         manager.setAllDetectedProjects(['C:/project/test.cbp']);
         manager.addToQueue(['C:/project/test.cbp']);
 
@@ -174,8 +158,9 @@ suite('DataManager Test Suite', () => {
 
     // ==================== persistence ====================
 
-    test('should persist queue order to globalState', async () => {
-        manager.setContext(mockContext);
+    test('should persist queue order to file', () => {
+        const stateFile = path.join(tempDir, '.cbp-build', 'queue.json');
+        manager.setStateFilePath(stateFile);
         manager.setAllDetectedProjects(['C:/project/test1.cbp', 'C:/project/test2.cbp']);
         manager.addToQueue(['C:/project/test1.cbp', 'C:/project/test2.cbp']);
 
@@ -183,38 +168,63 @@ suite('DataManager Test Suite', () => {
         const queueItems = manager.getQueueItems();
         manager.moveQueueItem([queueItems[0]], queueItems[1]);
 
-        // Get persisted data
-        const savedQueuePaths = mockContext.globalState.get<string[]>('buildQueueOrder');
-        assert.strictEqual(savedQueuePaths?.length, 2);
-        assert.strictEqual(savedQueuePaths?.[0], 'C:/project/test2.cbp');
+        // Verify file was created
+        assert.ok(fs.existsSync(stateFile));
+
+        // Verify file content
+        const savedState = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
+        assert.strictEqual(savedState.queuePaths.length, 2);
+        assert.strictEqual(savedState.queuePaths[0], 'C:/project/test2.cbp');
     });
 
-    test('should load state from globalState', () => {
-        // Pre-set data in memento
-        mockContext.globalState.update('buildQueueOrder', ['C:/loaded/project.cbp']);
-        mockContext.globalState.update('projectCheckState', { 'C:/loaded/project.cbp': false });
+    test('should load state from file', () => {
+        // Create state file with pre-existing data
+        const stateDir = path.join(tempDir, '.cbp-build');
+        fs.mkdirSync(stateDir, { recursive: true });
+        const stateFile = path.join(stateDir, 'queue.json');
 
-        manager.setContext(mockContext);
-        manager.setAllDetectedProjects(['C:/loaded/project.cbp']);
+        // Create a .cbp file in temp dir so it passes existsSync check
+        const projectPath = path.join(tempDir, 'project.cbp');
+        fs.writeFileSync(projectPath, '');
+        fs.writeFileSync(stateFile, JSON.stringify({
+            queuePaths: [projectPath],
+            checkState: { [projectPath]: false }
+        }), 'utf-8');
 
-        const queue = manager.getQueueItems();
+        // Create new manager to test loading
+        const manager2 = new CbpDataManager();
+        manager2.setStateFilePath(stateFile);
+
+        const queue = manager2.getQueueItems();
         assert.strictEqual(queue.length, 1);
-        assert.strictEqual(queue[0].fsPath, 'C:/loaded/project.cbp');
+        assert.strictEqual(queue[0].fsPath, projectPath);
     });
 
     // ==================== scanWorkspace ====================
 
-    test('scanWorkspace: should filter out non-existent projects', async () => {
-        // This test would require mocking vscode.workspace.findFiles
-        // For now, we test the logic that filters the queue
-        manager.setAllDetectedProjects(['C:/existing/project1.cbp']);
-        manager.addToQueue(['C:/existing/project1.cbp', 'C:/nonexistent/project2.cbp']);
+    test('loadState: should filter out non-existent projects', () => {
+        // Create state file with a non-existent project
+        const stateDir = path.join(tempDir, '.cbp-build');
+        fs.mkdirSync(stateDir, { recursive: true });
+        const stateFile = path.join(stateDir, 'queue.json');
 
-        // Manually simulate what scanWorkspace does
-        manager.setAllDetectedProjects(['C:/existing/project1.cbp']);
-        const queue = manager.getQueueItems();
+        // Create an existing .cbp file
+        const existingPath = path.join(tempDir, 'existing.cbp');
+        fs.writeFileSync(existingPath, '');
 
-        // project2 should be filtered out since it's not in allDetectedProjects
-        assert.ok(queue.some(p => p.fsPath === 'C:/existing/project1.cbp'));
+        // Create state with one existing and one non-existent file
+        fs.writeFileSync(stateFile, JSON.stringify({
+            queuePaths: [existingPath, 'C:/nonexistent/project2.cbp'],
+            checkState: {}
+        }), 'utf-8');
+
+        // Create new manager to test loading
+        const manager2 = new CbpDataManager();
+        manager2.setStateFilePath(stateFile);
+
+        const queue = manager2.getQueueItems();
+        // Should only have the existing file
+        assert.strictEqual(queue.length, 1);
+        assert.strictEqual(queue[0].fsPath, existingPath);
     });
 });
