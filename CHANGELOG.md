@@ -4,6 +4,16 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.2.0] - 2026-04-23
+
+### Changed
+- 优化构建队列持久化机制，队列数据保存到项目文件夹的 `.cbp-build/queue.json`
+- 使用同步文件写入替代异步 globalState，解决 VS Code 异常关闭时数据丢失问题
+- 队列加载时直接检查文件是否存在，不再依赖 VS Code 工作区索引
+
+### Fixed
+- 修复 VS Code 重启后队列有时消失的问题
+
 ## [1.1.2] - 2026-03-27
 
 ### Fixed

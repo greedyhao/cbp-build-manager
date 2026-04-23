@@ -23,7 +23,7 @@
 
 ### 方法 1：从 VSIX 包安装
 
-1. 下载最新的 `cbp-build-manager-1.1.2.vsix` 文件
+1. 下载最新的 `cbp-build-manager-1.2.0.vsix` 文件
 2. 打开 VS Code
 3. 按 `Ctrl+Shift+X` 打开扩展面板
 4. 点击右上角的 `...` 菜单
