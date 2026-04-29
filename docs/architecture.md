@@ -256,7 +256,7 @@ DataManager
 
 ## 已知限制
 
-1. **cbp2clangd 版本要求**: 最低 v1.3.0
+1. **cbp2clangd 版本要求**: 最低 v1.4.0
 2. **clangd 版本要求**: noHeaderInsertion 需要 v21+
 3. **平台支持**: 主要针对 Windows，Linux 支持有限
 4. **工作区限制**: 假设单个工作区文件夹

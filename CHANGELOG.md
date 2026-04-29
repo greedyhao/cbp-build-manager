@@ -4,6 +4,23 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.3.0] - 2026-04-29
+
+### Added
+- 新增**编译数据库 (Compile Commands)** 视图，自动扫描工作区中所有 `compile_commands.json` 文件
+- 编译数据库支持复选框勾选，手动触发合并选中的 `compile_commands.json`
+- 合并功能改用 cbp2clangd 的 `merge-compile-commands` 命令（`--json` 参数），合并目标自动为构建队列最后一个 CBP 项目对应的 json
+- 构建队列和编译数据库列表项支持双击在编辑器中打开对应文件
+
+### Changed
+- 移除 `cbpBuildManager.mergeCompileCommands` 配置项，合并改为手动触发
+- cbp2clangd 最低版本要求从 v1.3.0 提升至 v1.4.0
+- `ProjectLibraryProvider` 空工作区时自动计算文件公共父目录作为根
+
+### Fixed
+- 修复所有单元测试用例，全部 73 个测试通过
+- 测试用例全部改用临时目录动态路径，不再使用硬编码平台路径
+
 ## [1.2.0] - 2026-04-23
 
 ### Changed

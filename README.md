@@ -6,7 +6,8 @@
 
 - **项目扫描**：自动查找工作区中的所有 .cbp 文件
 - **双视图管理**：
-  - **构建队列**：显示已选择的项目，支持拖放排序和复选框选择
+  - **构建队列**：显示已选择的项目，支持拖放排序和复选框选择，双击打开 CBP 文件
+  - **编译数据库**：自动扫描工作区中所有 `compile_commands.json`，支持勾选合并
   - **项目资源库**：按文件夹层级显示可用项目，自动隐藏已在队列中的项目
 - **芯片系列筛选**：智能识别项目路径中的芯片系列（如 bt5790、bt5690），支持按芯片筛选显示项目
 - **拖放操作**：在构建队列中拖动来控制构建顺序
@@ -17,13 +18,13 @@
 - **队列持久化**：构建队列自动保存到项目文件夹的 `.cbp-build/queue.json`，重启 VS Code 后自动恢复队列顺序和勾选状态
 - **重新编译功能**：先清理后构建，提高开发效率
 - **单独清理功能**：可单独运行清理命令，方便管理构建文件
-- **compile_commands.json 合并**：自动合并多个项目的 compile_commands.json，优化 clangd 跨工程索引
+- **compile_commands.json 合并**：手动勾选编译数据库中的文件，通过 cbp2clangd 合并优化 clangd 跨工程索引
 
 ## 安装方法
 
 ### 方法 1：从 VSIX 包安装
 
-1. 下载最新的 `cbp-build-manager-1.2.0.vsix` 文件
+1. 下载最新的 `cbp-build-manager-1.3.0.vsix` 文件
 2. 打开 VS Code
 3. 按 `Ctrl+Shift+X` 打开扩展面板
 4. 点击右上角的 `...` 菜单
@@ -50,7 +51,6 @@
 | `cbpBuildManager.buildCommand` | `./build.bat` | 运行构建脚本的命令 |
 | `cbpBuildManager.ninjaPath` | `""` | ninja 可执行文件的路径 |
 | `cbpBuildManager.noHeaderInsertion` | `true` | 禁止 clangd 在补全代码时插入头文件（需要 clangd v21+） |
-| `cbpBuildManager.mergeCompileCommands` | `true` | 自动合并多个项目的 compile_commands.json，优化 clangd 跨工程索引 |
 | `cbpBuildManager.debug` | `false` | 启用调试模式，显示详细的调试信息 |
 | `cbpBuildManager.stopOnFailure` | `true` | 编译失败时停止后续项目的编译 |
 
@@ -97,6 +97,13 @@
 - **拖放**：在**构建队列**中拖动来更改构建顺序
 - **删除项目**：右键点击项目，选择**从编译列表移除**选项
 
+#### 编译数据库合并
+
+1. 在**编译数据库**视图中浏览工作区所有的 `compile_commands.json` 文件
+2. 勾选需要参与合并的文件
+3. 点击 **合并** 按钮，将勾选的文件合并到构建队列最后一个 CBP 项目对应的 `compile_commands.json` 中
+4. 双击任意 `compile_commands.json` 可在编辑器中打开查看
+
 ### 5. 构建项目
 
 点击 **构建** 按钮（▶️）开始按指定顺序构建**构建队列**中勾选的项目。
@@ -118,7 +125,7 @@
 当你点击构建按钮时，扩展会执行以下步骤：
 
 1. **读取配置**：获取 cbp2clang 和命令的设置
-2. **检查 cbp2clangd 版本**：确保 cbp2clangd 版本兼容（最小要求：v1.3.0）
+2. **检查 cbp2clangd 版本**：确保 cbp2clangd 版本兼容（最小要求：v1.4.0）
 3. **生成命令**：为**构建队列**中勾选的每个项目创建转换命令，使用 VSCode 工作区路径作为 compile_commands.json 输出路径
 4. **运行转换**：执行 cbp2clang 生成 compile_commands.json，用于 clangd 插件索引项目
 5. **执行构建脚本**：运行配置的构建脚本（默认：./build.bat）
