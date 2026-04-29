@@ -14,6 +14,11 @@ export class CompileCommandsItem extends vscode.TreeItem {
         this.description = path.basename(path.dirname(this.fsPath));
         this.contextValue = 'compileCommands';
         this.resourceUri = vscode.Uri.file(fsPath);
+        this.command = {
+            command: 'vscode.open',
+            title: 'Open',
+            arguments: [this.resourceUri]
+        };
 
         if (showCheckbox) {
             this.checkboxState = isChecked

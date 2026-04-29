@@ -15,6 +15,11 @@ export class CbpProjectItem extends vscode.TreeItem {
         this.description = path.basename(path.dirname(this.fsPath));
         this.contextValue = 'cbpProject';
         this.resourceUri = vscode.Uri.file(fsPath);
+        this.command = {
+            command: 'vscode.open',
+            title: 'Open',
+            arguments: [this.resourceUri]
+        };
 
         // 设置复选框状态（仅当需要显示复选框时）
         if (showCheckbox) {
