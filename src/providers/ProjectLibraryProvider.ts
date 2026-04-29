@@ -32,12 +32,38 @@ export class ProjectLibraryProvider implements vscode.TreeDataProvider<CbpProjec
     // 动态构建文件树的核心算法
     private buildTreeLevel(allFilePaths: string[], currentDir: string): (CbpProjectItem | DirectoryItem)[] {
         const result: (CbpProjectItem | DirectoryItem)[] = [];
+
+        // 当 currentDir 为空时，计算所有文件的公共父目录作为根目录
+        let effectiveDir = currentDir;
+        if (!effectiveDir && allFilePaths.length > 0) {
+            effectiveDir = allFilePaths.reduce((prefix, p) => {
+                while (prefix && !p.startsWith(prefix)) {
+                    const parent = path.dirname(prefix);
+                    if (parent === prefix) { return ''; }
+                    prefix = parent;
+                }
+                return prefix;
+            }, allFilePaths[0]);
+            // 公共前缀是文件路径本身（所有文件相同），取其父目录
+            if (effectiveDir === allFilePaths[0]) {
+                effectiveDir = path.dirname(effectiveDir);
+            }
+        }
+
+        if (!effectiveDir) {
+            for (const filePath of allFilePaths) {
+                const name = path.basename(filePath, '.cbp');
+                result.push(new CbpProjectItem(name, filePath, false, vscode.TreeItemCollapsibleState.None, false));
+            }
+            return result.sort((a, b) => a.label!.toString().localeCompare(b.label!.toString()));
+        }
+
         const processedFolders = new Set<string>();
 
         for (const filePath of allFilePaths) {
             // 检查文件是否在当前目录下
             // 使用 relative 检查层级关系
-            const relative = path.relative(currentDir, filePath);
+            const relative = path.relative(effectiveDir, filePath);
 
             // 如果 relative 以 .. 开头，说明不在当前目录下
             // 如果 isAbsolute，说明跨盘符等
@@ -53,7 +79,7 @@ export class ProjectLibraryProvider implements vscode.TreeDataProvider<CbpProjec
             } else {
                 // 是子文件夹
                 const folderName = parts[0];
-                const folderPath = path.join(currentDir, folderName);
+                const folderPath = path.join(effectiveDir, folderName);
 
                 if (!processedFolders.has(folderName)) {
                     processedFolders.add(folderName);

@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { CbpProjectItem } from '../models/items';
+import { CompileCommandsItem } from '../models/CompileCommandsItem';
 
 // --- 数据管理器 (核心逻辑) ---
 
@@ -10,6 +11,10 @@ export class CbpDataManager {
     private buildQueue: CbpProjectItem[] = [];
     // 下方：所有的项目缓存 (用于计算差异)
     private allDetectedProjects: string[] = []; // 存 fsPath
+
+    // compile_commands.json 管理
+    private compileCommandsItems: CompileCommandsItem[] = [];
+    private compileCommandsCheckState: Record<string, boolean> = {};
 
     // 芯片系列筛选
     private chipFilter: string | null = null; // null 表示显示全部
@@ -60,6 +65,9 @@ export class CbpDataManager {
                 return new CbpProjectItem(name, fsPath, isChecked, vscode.TreeItemCollapsibleState.None, true);
             }).filter((item): item is CbpProjectItem => item !== null);
 
+            // 加载编译数据库勾选状态
+            this.compileCommandsCheckState = state.compileCommandsCheckState || {};
+
             // 加载芯片筛选状态
             this.chipFilter = state.chipFilter ?? null;
         } catch (error) {
@@ -86,7 +94,8 @@ export class CbpDataManager {
             const state = {
                 queuePaths,
                 checkState,
-                chipFilter: this.chipFilter
+                chipFilter: this.chipFilter,
+                compileCommandsCheckState: this.compileCommandsCheckState
             };
 
             fs.writeFileSync(this.stateFilePath, JSON.stringify(state, null, 2), 'utf-8');
@@ -102,6 +111,38 @@ export class CbpDataManager {
         const cbpFiles = await vscode.workspace.findFiles('**/*.cbp');
         this.allDetectedProjects = cbpFiles.map(f => f.fsPath);
         this._onDidChangeTreeData.fire();
+    }
+
+    // 扫描 compile_commands.json 文件
+    async scanCompileCommands() {
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (!workspaceRoot) { return; }
+
+        const files = await vscode.workspace.findFiles(
+            '**/compile_commands.json',
+            '**/node_modules/**,**/.git/**,**/.vscode/**,**/.cbp-build/**'
+        );
+
+        this.compileCommandsItems = files.map(f => {
+            const relativePath = path.relative(workspaceRoot, f.fsPath);
+            const isChecked = this.compileCommandsCheckState[f.fsPath] ?? false;
+            return new CompileCommandsItem(relativePath, f.fsPath, isChecked);
+        });
+
+        this._onDidChangeTreeData.fire();
+    }
+
+    // 获取 compile_commands.json 列表
+    getCompileCommandsItems(): CompileCommandsItem[] {
+        return this.compileCommandsItems;
+    }
+
+    // 更新 compile_commands.json 勾选状态
+    updateCompileCommandsCheckState(item: CompileCommandsItem, state: vscode.TreeItemCheckboxState) {
+        item.checkboxState = state;
+        item.isChecked = (state === vscode.TreeItemCheckboxState.Checked);
+        this.compileCommandsCheckState[item.fsPath] = item.isChecked;
+        this.saveState();
     }
 
     // 获取构建队列 (上方列表)
@@ -241,5 +282,10 @@ export class CbpDataManager {
     // 设置状态文件路径（用于测试）
     setStateFilePath(filePath: string) {
         this.stateFilePath = filePath;
+    }
+
+    // 重新加载状态（用于测试）
+    reloadState() {
+        this.loadState();
     }
 }

@@ -71,16 +71,16 @@ suite('CompileCommandsMerger Test Suite', () => {
         assert.strictEqual(result, true);
     });
 
-    test('should skip merge when less than 2 compile_commands.json exist', async () => {
-        // Create project directories
+    test('should skip merge when less than 2 valid CBP files exist', async () => {
+        // Create project directories and CBP files
         const dir1 = path.join(tempDir, 'project1');
         const dir2 = path.join(tempDir, 'project2');
         fs.mkdirSync(dir1);
         fs.mkdirSync(dir2);
 
-        // Create only one compile_commands.json
-        const compileCommands1 = path.join(dir1, 'compile_commands.json');
-        fs.writeFileSync(compileCommands1, JSON.stringify([{ file: 'test.cpp' }]));
+        // Create only one CBP file, not two
+        const cbpFile1 = path.join(dir1, 'project1.cbp');
+        fs.writeFileSync(cbpFile1, '');
 
         const projects = [
             createMockProject('project1', dir1),
@@ -91,18 +91,18 @@ suite('CompileCommandsMerger Test Suite', () => {
 
         const result = await mergeCompileCommands(
             projects,
-            'cbp2clang',
+            'nonexistent-cbp2clang',
             tempDir,
             false,
             (msg: string) => logMessages.push(msg)
         );
 
         assert.strictEqual(result, true);
-        assert.ok(logMessages.some(msg => msg.includes('compile_commands.json 数量少于2个')));
+        assert.ok(logMessages.some(msg => msg.includes('有效的 CBP 项目数量少于2个')));
     });
 
-    test('should attempt merge when multiple compile_commands.json exist', async () => {
-        // Create project directories
+    test('should attempt merge when multiple CBP files exist', async () => {
+        // Create project directories and CBP files
         const dir1 = path.join(tempDir, 'project1');
         const dir2 = path.join(tempDir, 'project2');
         const dir3 = path.join(tempDir, 'project3');
@@ -110,14 +110,10 @@ suite('CompileCommandsMerger Test Suite', () => {
         fs.mkdirSync(dir2);
         fs.mkdirSync(dir3);
 
-        // Create compile_commands.json files
-        const compileCommands1 = path.join(dir1, 'compile_commands.json');
-        const compileCommands2 = path.join(dir2, 'compile_commands.json');
-        const compileCommands3 = path.join(dir3, 'compile_commands.json');
-
-        fs.writeFileSync(compileCommands1, JSON.stringify([{ file: 'test1.cpp' }]));
-        fs.writeFileSync(compileCommands2, JSON.stringify([{ file: 'test2.cpp' }]));
-        fs.writeFileSync(compileCommands3, JSON.stringify([{ file: 'test3.cpp' }]));
+        // Create CBP files so the function can find them
+        fs.writeFileSync(path.join(dir1, 'project1.cbp'), '');
+        fs.writeFileSync(path.join(dir2, 'project2.cbp'), '');
+        fs.writeFileSync(path.join(dir3, 'project3.cbp'), '');
 
         const projects = [
             createMockProject('project1', dir1),
@@ -127,8 +123,7 @@ suite('CompileCommandsMerger Test Suite', () => {
 
         const logMessages: string[] = [];
 
-        // This will try to call cbp2clang which probably doesn't exist, so it will fail
-        // But we can verify the log messages show the correct paths
+        // Use nonexistent cbp2clang - merge will fail but log messages should be correct
         await mergeCompileCommands(
             projects,
             'nonexistent-cbp2clang',
@@ -137,13 +132,12 @@ suite('CompileCommandsMerger Test Suite', () => {
             (msg: string) => logMessages.push(msg)
         );
 
-        // Verify that merge was attempted
         assert.ok(logMessages.some(msg => msg.includes('合并 compile_commands.json')));
         assert.ok(logMessages.some(msg => msg.includes('project3')));
     });
 
     test('should correctly identify target as last project', async () => {
-        // Create project directories
+        // Create project directories and CBP files
         const dir1 = path.join(tempDir, 'project1');
         const dir2 = path.join(tempDir, 'project2');
         const dir3 = path.join(tempDir, 'project3');
@@ -151,13 +145,10 @@ suite('CompileCommandsMerger Test Suite', () => {
         fs.mkdirSync(dir2);
         fs.mkdirSync(dir3);
 
-        // Create compile_commands.json files in all directories
-        [dir1, dir2, dir3].forEach(dir => {
-            fs.writeFileSync(
-                path.join(dir, 'compile_commands.json'),
-                JSON.stringify([{ file: 'test.cpp' }])
-            );
-        });
+        // Create CBP files so the function can find them
+        fs.writeFileSync(path.join(dir1, 'project1.cbp'), '');
+        fs.writeFileSync(path.join(dir2, 'project2.cbp'), '');
+        fs.writeFileSync(path.join(dir3, 'project3.cbp'), '');
 
         const projects = [
             createMockProject('project1', dir1),
@@ -167,7 +158,6 @@ suite('CompileCommandsMerger Test Suite', () => {
 
         const logMessages: string[] = [];
 
-        // Use a nonexistent cbp2clang to trigger the log but not actually merge
         await mergeCompileCommands(
             projects,
             'nonexistent-cbp2clang',
@@ -176,7 +166,7 @@ suite('CompileCommandsMerger Test Suite', () => {
             (msg: string) => logMessages.push(msg)
         );
 
-        // Verify target is project3 (the last one)
-        assert.ok(logMessages.some(msg => msg.includes('project3') && msg.includes('目标文件')));
+        // Verify target is project3 (the last one) using actual function output
+        assert.ok(logMessages.some(msg => msg.includes('project3') && msg.includes('目标项目')));
     });
 });

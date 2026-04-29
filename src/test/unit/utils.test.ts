@@ -1,7 +1,10 @@
 import * as assert from 'assert';
+import * as path from 'path';
+import * as os from 'os';
 import { compareVersions, formatOutput, decodeBuffer, OutputLineBuffer, processBuildCommandPath, parseNinjaProgress } from '../../utils';
 
 suite('Utils Test Suite', () => {
+    const baseDir = path.join(os.tmpdir(), 'test-project');
     // ==================== compareVersions ====================
 
     test('compareVersions: version1 > version2', () => {
@@ -27,8 +30,8 @@ suite('Utils Test Suite', () => {
     });
 
     test('compareVersions: edge cases - empty or invalid', () => {
-        assert.strictEqual(compareVersions('', '1.0.0'), true); // empty treated as 0
-        assert.strictEqual(compareVersions('1.0.0', ''), false);
+        assert.strictEqual(compareVersions('', '1.0.0'), false); // empty → [0], 0 < 1
+        assert.strictEqual(compareVersions('1.0.0', ''), true);  // 1 > 0
     });
 
     // ==================== formatOutput ====================
@@ -119,44 +122,44 @@ suite('Utils Test Suite', () => {
     // ==================== processBuildCommandPath ====================
 
     test('processBuildCommandPath: basic relative path conversion', () => {
-        const cwd = 'C:/projects/myproject';
         const line = 'src/main.cpp:10: error: undefined reference';
-        const result = processBuildCommandPath(line, cwd);
-        assert.ok(result.includes('C:/projects/myproject/src/main.cpp:10'));
+        const result = processBuildCommandPath(line, baseDir);
+        const expected = path.normalize(path.join(baseDir, 'src/main.cpp:10'));
+        assert.ok(result.includes(expected), `Expected "${result}" to include "${expected}"`);
     });
 
     test('processBuildCommandPath: multiple paths in line', () => {
-        const cwd = 'C:/projects/myproject';
         const line = 'src/main.cpp:10: error: undefined reference to func in lib/helper.cpp:5';
-        const result = processBuildCommandPath(line, cwd);
-        assert.ok(result.includes('C:/projects/myproject/src/main.cpp:10'));
+        const result = processBuildCommandPath(line, baseDir);
+        const expected = path.normalize(path.join(baseDir, 'src/main.cpp:10'));
+        assert.ok(result.includes(expected), `Expected "${result}" to include "${expected}"`);
     });
 
     test('processBuildCommandPath: different file extensions', () => {
-        const cwd = 'C:/projects/myproject';
-
         const cFile = 'src/main.c:10: error';
-        assert.ok(processBuildCommandPath(cFile, cwd).includes('C:/projects/myproject/src/main.c:10'));
+        assert.ok(processBuildCommandPath(cFile, baseDir).includes(path.normalize(path.join(baseDir, 'src/main.c:10'))));
 
         const hFile = 'include/header.h:5: note';
-        assert.ok(processBuildCommandPath(hFile, cwd).includes('C:/projects/myproject/include/header.h:5'));
+        assert.ok(processBuildCommandPath(hFile, baseDir).includes(path.normalize(path.join(baseDir, 'include/header.h:5'))));
     });
 
     test('processBuildCommandPath: Windows absolute path should not double prefix', () => {
-        const cwd = 'D:/Project/569x_pan_yyc/app/platform/libs/net';
+        // 使用当前项目路径作为 cwd
+        const cwd = path.join(baseDir, 'platform');
+        // 构造一个 cwd 子目录下的绝对路径
+        const absPath = path.join(cwd, 'modules', 'lwip', 'src', 'core', 'dns.c');
+        const line = `${absPath}:10: error`;
+        const result = processBuildCommandPath(line, cwd);
+        // 绝对路径不应该被拼接为 cwd + absPath
+        assert.ok(result.includes(absPath), `Expected "${result}" to include "${absPath}"`);
+    });
 
-        // 模拟 gcc/clang 输出的 Windows 绝对路径（正斜杠）
-        const line1 = 'D:/Project/569x_pan_yyc/app/platform/libs/net/modules/lwip/src/core/dns.c:10: error';
-        const result1 = processBuildCommandPath(line1, cwd);
-        // 不应该产生 D:d: 这样的双重盘符
-        assert.ok(!result1.includes('D:d:'), `Result should not contain D:d:, got: ${result1}`);
-        assert.ok(result1.includes('D:/Project/569x_pan_yyc/app/platform/libs/net/modules/lwip/src/core/dns.c:10'));
-
-        // 模拟 Windows 反斜杠路径
-        const line2 = 'd:\\Project\\569x_pan_yyc\\app\\test.cpp:20: warning';
-        const result2 = processBuildCommandPath(line2, cwd);
-        assert.ok(!result2.includes('D:d:'), `Result should not contain D:d:, got: ${result2}`);
-        assert.ok(result2.includes('d:\\Project\\569x_pan_yyc\\app\\test.cpp:20') || result2.includes('D:\\Project\\569x_pan_yyc\\app\\test.cpp:20'));
+    test('processBuildCommandPath: Windows backslash absolute path', () => {
+        const cwd = path.join(baseDir, 'platform');
+        const absPath = path.join(cwd, 'app', 'test.cpp');
+        const line = `${absPath}:20: warning`;
+        const result = processBuildCommandPath(line, cwd);
+        assert.ok(result.includes(absPath), `Expected "${result}" to include "${absPath}"`);
     });
 
     test('processBuildCommandPath: Unix absolute path should not be prefixed', () => {

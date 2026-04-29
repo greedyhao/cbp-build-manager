@@ -1,2 +1,2 @@
 export { CbpDataManager } from './DataManager';
-export { mergeCompileCommands, checkMergeCommandSupport } from './CompileCommandsMerger';
+export { mergeCompileCommands, checkMergeCommandSupport, mergeCompileCommandsFiles } from './CompileCommandsMerger';

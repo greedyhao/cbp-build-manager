@@ -11,7 +11,7 @@ export { CbpDataManager } from './services/DataManager';
 export { BuildQueueProvider, ProjectLibraryProvider } from './providers';
 export { BuildTerminal, createOrShowTerminal, runCommand, runCommandInDirectory } from './terminal/TerminalManager';
 export { decodeBuffer, formatOutput, compareVersions, OutputLineBuffer } from './utils';
-export { mergeCompileCommands, checkMergeCommandSupport } from './services/index';
+export { mergeCompileCommands, checkMergeCommandSupport, mergeCompileCommandsFiles } from './services/index';
 
 // --- 常量定义 ---
 // cbp2clangd 最小要求版本
@@ -21,7 +21,8 @@ const MIN_REQUIRED_CBP2CLANG_VERSION = '1.3.0';
 import { CbpDataManager } from './services/DataManager.js';
 import { createOrShowTerminal, runCommand, runCommandInDirectory } from './terminal/TerminalManager.js';
 import { compareVersions } from './utils/index.js';
-import { mergeCompileCommands, checkMergeCommandSupport } from './services/index.js';
+import { mergeCompileCommandsFiles } from './services/index.js';
+import { CompileCommandsProvider } from './providers/CompileCommandsProvider.js';
 
 // --- 检查 cbp2clangd 版本 ---
 async function checkCbp2clangVersion(cbp2clangPath: string): Promise<string> {
@@ -208,8 +209,23 @@ export function activate(context: vscode.ExtensionContext) {
         });
     });
 
+    // Compile Commands 视图
+    const compileCommandsProvider = new CompileCommandsProvider(manager);
+
+    const compileCommandsTreeView = vscode.window.createTreeView('cbpCompileCommands', {
+        treeDataProvider: compileCommandsProvider,
+        canSelectMany: true
+    });
+
+    compileCommandsTreeView.onDidChangeCheckboxState(e => {
+        e.items.forEach(([item, state]) => {
+            manager.updateCompileCommandsCheckState(item as any, state);
+        });
+    });
+
     // 初始扫描
     manager.scanWorkspace();
+    manager.scanCompileCommands();
 
     // --- 命令注册 ---
 
@@ -292,6 +308,64 @@ export function activate(context: vscode.ExtensionContext) {
                 const chipName = selected.label.replace('$(chip) ', '');
                 manager.setChipFilter(chipName);
             }
+        }
+    }));
+
+    // 刷新 Compile Commands 视图
+    context.subscriptions.push(vscode.commands.registerCommand('cbp-build-manager.refreshCompileCommands', () => {
+        manager.scanCompileCommands();
+    }));
+
+    // 合并 Compile Commands
+    context.subscriptions.push(vscode.commands.registerCommand('cbp-build-manager.mergeCompileCommands', async () => {
+        const terminal = createOrShowTerminal();
+        const checkedItems = manager.getCompileCommandsItems()
+            .filter(item => item.checkboxState === vscode.TreeItemCheckboxState.Checked);
+
+        if (checkedItems.length === 0) {
+            terminal.write('没有勾选需要合并的 compile_commands.json\r\n');
+            vscode.window.showInformationMessage('没有勾选 compile_commands.json 文件，请先勾选后再合并');
+            return;
+        }
+
+        // 构建队列最后一个 CBP 对应的 compile_commands.json 作为合并目标（第一个参数）
+        const queueItems = manager.getQueueItems();
+        const targetJsonPath = queueItems.length > 0
+            ? path.join(path.dirname(queueItems[queueItems.length - 1].fsPath), 'compile_commands.json')
+            : '';
+
+        // 按目标在前、其余在后的顺序排列
+        let files = checkedItems.map(item => item.fsPath);
+        if (targetJsonPath) {
+            const targetIndex = files.findIndex(f => path.normalize(f) === path.normalize(targetJsonPath));
+            if (targetIndex > 0) {
+                // 将目标 json 移到第一位
+                files = [files[targetIndex], ...files.slice(0, targetIndex), ...files.slice(targetIndex + 1)];
+            } else if (targetIndex === -1) {
+                // 目标未勾选，强制插入到第一位
+                terminal.write(`\x1b[33m构建队列最后一个项目的 compile_commands.json 未勾选，已自动加入合并目标\x1b[0m\r\n`);
+                files = [targetJsonPath, ...files];
+            }
+            // targetIndex === 0: 已经在第一位，无需调整
+        }
+
+        if (files.length < 2) {
+            terminal.write('至少需要 2 个 compile_commands.json 才能合并\r\n');
+            vscode.window.showInformationMessage('至少需要 2 个 compile_commands.json 才能合并');
+            return;
+        }
+
+        const config = vscode.workspace.getConfiguration('cbpBuildManager');
+        const cbp2clangPath = config.get<string>('cbp2clangPath', 'cbp2clang');
+        const debugMode = config.get<boolean>('debug', false);
+
+        terminal.write(`\x1b[36m=== 合并 ${files.length} 个 compile_commands.json ===\x1b[0m\r\n`);
+        const success = await mergeCompileCommandsFiles(files, cbp2clangPath, debugMode, (msg) => terminal.write(msg));
+        if (success) {
+            vscode.window.showInformationMessage(`成功合并 ${files.length} 个 compile_commands.json`);
+        } else {
+            terminal.write(`\x1b[31m合并失败\x1b[0m\r\n`);
+            vscode.window.showErrorMessage('合并 compile_commands.json 失败，请检查终端输出');
         }
     }));
 
@@ -409,23 +483,8 @@ export function activate(context: vscode.ExtensionContext) {
             }
         }
 
-        // 合并 compile_commands.json（如果启用）
-        const mergeEnabled = config.get<boolean>('mergeCompileCommands', false);
-        const workspaceRootPath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
-        if (mergeEnabled && selectedProjects.length > 1) {
-            terminal.write(`\n\x1b[36m=== 处理 compile_commands.json 合并 ===\x1b[0m\n`);
-            try {
-                const supportMerge = await checkMergeCommandSupport(cbp2clangPath);
-                if (supportMerge) {
-                    await mergeCompileCommands(selectedProjects, cbp2clangPath, workspaceRootPath, debugMode, (msg) => terminal.write(msg));
-                } else {
-                    terminal.write(`\x1b[33m警告: cbp2clangd 不支持 merge-compile-commands 命令，请升级到最新版本\x1b[0m\n`);
-                }
-            } catch (error) {
-                terminal.write(`\x1b[33m警告: 合并 compile_commands.json 失败: ${(error as Error).message}\x1b[0m\n`);
-                // 不阻断构建流程，仅警告
-            }
-        }
+        // 刷新 compile_commands.json 视图
+        manager.scanCompileCommands();
 
         terminal.write(`\n\x1b[36m=== 构建流程结束 ===\x1b[0m\n`);
     }));
@@ -535,23 +594,8 @@ export function activate(context: vscode.ExtensionContext) {
             }
         }
 
-        // 合并 compile_commands.json（如果启用）
-        const mergeEnabled = config.get<boolean>('mergeCompileCommands', false);
-        const workspaceRootPath2 = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
-        if (mergeEnabled && selectedProjects.length > 1) {
-            terminal.write(`\n\x1b[36m=== 处理 compile_commands.json 合并 ===\x1b[0m\n`);
-            try {
-                const supportMerge = await checkMergeCommandSupport(cbp2clangPath);
-                if (supportMerge) {
-                    await mergeCompileCommands(selectedProjects, cbp2clangPath, workspaceRootPath2, debugMode, (msg) => terminal.write(msg));
-                } else {
-                    terminal.write(`\x1b[33m警告: cbp2clangd 不支持 merge-compile-commands 命令，请升级到最新版本\x1b[0m\n`);
-                }
-            } catch (error) {
-                terminal.write(`\x1b[33m警告: 合并 compile_commands.json 失败: ${(error as Error).message}\x1b[0m\n`);
-                // 不阻断构建流程，仅警告
-            }
-        }
+        // 刷新 compile_commands.json 视图
+        manager.scanCompileCommands();
 
         terminal.write(`\n\x1b[36m=== 重新编译流程结束 ===\x1b[0m\n`);
     }));

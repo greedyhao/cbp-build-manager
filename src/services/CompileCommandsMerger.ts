@@ -196,3 +196,116 @@ export async function mergeCompileCommands(
         return false;
     }
 }
+
+/**
+ * 调用 cbp2clangd merge-compile-commands 合并多个 compile_commands.json
+ * 第一个 json 路径作为合并目标，其余为源
+ */
+export async function mergeCompileCommandsFiles(
+    compileCommandsPaths: string[],
+    cbp2clangPath: string,
+    debug: boolean = false,
+    terminalWrite?: (msg: string) => void
+): Promise<boolean> {
+    const log = (msg: string) => {
+        if (terminalWrite) {
+            terminalWrite(msg);
+        }
+    };
+
+    if (compileCommandsPaths.length < 2) {
+        log('\x1b[33m至少需要 2 个 compile_commands.json 文件（1 个目标 + 至少 1 个源）\x1b[0m\n');
+        return false;
+    }
+
+    // 验证所有文件存在
+    const existingPaths = compileCommandsPaths.filter(p => {
+        try {
+            return fs.existsSync(p);
+        } catch {
+            return false;
+        }
+    });
+
+    if (existingPaths.length < 2) {
+        log('\x1b[33m有效的 compile_commands.json 文件不足 2 个\x1b[0m\n');
+        return false;
+    }
+
+    const targetPath = existingPaths[0];
+    const sourcePaths = existingPaths.slice(1);
+
+    log(`\n\x1b[36m=== 合并 compile_commands.json ===\x1b[0m\n`);
+    log(`目标: ${path.basename(path.dirname(targetPath))}/${path.basename(targetPath)}\n`);
+    sourcePaths.forEach(p => {
+        log(`  源: ${path.basename(path.dirname(p))}/${path.basename(p)}\n`);
+    });
+
+    try {
+        const mergeArgs = ['merge-compile-commands', '--json', ...existingPaths];
+
+        if (debug) {
+            mergeArgs.push('--debug');
+        }
+
+        log(`\x1b[90m执行: ${cbp2clangPath} ${mergeArgs.join(' ')}\x1b[0m\n`);
+
+        const result = await new Promise<{ success: boolean; error?: string; stdout?: string }>((resolve, reject) => {
+            const child = cp.spawn(cbp2clangPath, mergeArgs, {
+                windowsHide: true,
+                shell: true
+            });
+
+            let stderr = '';
+            let stdout = '';
+
+            const timeout = setTimeout(() => {
+                child.kill();
+                reject(new Error('合并命令执行超时'));
+            }, 30000);
+
+            if (child.stdout) {
+                child.stdout.on('data', (data: Buffer) => {
+                    stdout += decodeBuffer(data);
+                });
+            }
+
+            if (child.stderr) {
+                child.stderr.on('data', (data: Buffer) => {
+                    stderr += decodeBuffer(data);
+                });
+            }
+
+            child.on('close', (code: number) => {
+                clearTimeout(timeout);
+                if (code === 0) {
+                    resolve({ success: true, stdout });
+                } else {
+                    resolve({ success: false, error: stderr || `Exit code ${code}`, stdout });
+                }
+            });
+
+            child.on('error', (err: Error) => {
+                clearTimeout(timeout);
+                resolve({ success: false, error: err.message });
+            });
+        });
+
+        if (result.success) {
+            if (result.stdout) {
+                log(`\x1b[90m${result.stdout}\x1b[0m\n`);
+            }
+            log(`\x1b[32m合并完成 → ${targetPath}\x1b[0m\n`);
+            return true;
+        } else {
+            log(`\x1b[33m合并失败: ${result.error}\x1b[0m\n`);
+            if (result.stdout) {
+                log(`\x1b[90m${result.stdout}\x1b[0m\n`);
+            }
+            return false;
+        }
+    } catch (error) {
+        log(`\x1b[33m合并异常: ${(error as Error).message}\x1b[0m\n`);
+        return false;
+    }
+}

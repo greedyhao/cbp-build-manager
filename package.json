@@ -56,6 +56,16 @@
         "command": "cbp-build-manager.filterByChip",
         "title": "按芯片系列筛选",
         "icon": "$(filter)"
+      },
+      {
+        "command": "cbp-build-manager.mergeCompileCommands",
+        "title": "合并编译数据库",
+        "icon": "$(merge)"
+      },
+      {
+        "command": "cbp-build-manager.refreshCompileCommands",
+        "title": "刷新编译数据库",
+        "icon": "$(refresh)"
       }
     ],
     "viewsContainers": {
@@ -73,6 +83,11 @@
           "id": "cbpBuildQueue",
           "name": "构建队列 (Build Queue)",
           "contextualTitle": "构建队列"
+        },
+        {
+          "id": "cbpCompileCommands",
+          "name": "编译数据库 (Compile Commands)",
+          "contextualTitle": "编译数据库"
         },
         {
           "id": "cbpProjectLibrary",
@@ -117,6 +132,16 @@
           "command": "cbp-build-manager.filterByChip",
           "group": "navigation@3",
           "when": "view == cbpProjectLibrary"
+        },
+        {
+          "command": "cbp-build-manager.mergeCompileCommands",
+          "group": "navigation@1",
+          "when": "view == cbpCompileCommands"
+        },
+        {
+          "command": "cbp-build-manager.refreshCompileCommands",
+          "group": "navigation@2",
+          "when": "view == cbpCompileCommands"
         }
       ],
       "view/item/context": [
@@ -163,12 +188,7 @@
           "default": true,
           "description": "禁止 clangd 在补全代码时插入头文件（需要 clangd v21 以上版本，否则 .clangd 文件会出现 lint 错误：Unknown Completion key 'HeaderInsertion'）"
         },
-        "cbpBuildManager.mergeCompileCommands": {
-          "type": "boolean",
-          "default": true,
-          "description": "构建完成后自动合并所有项目的 compile_commands.json 到最后一个项目，优化 clangd 对多工程的函数索引（需要 cbp2clangd 支持 merge-compile-commands 命令）"
-        },
-        "cbpBuildManager.debug": {
+"cbpBuildManager.debug": {
           "type": "boolean",
           "default": false,
           "description": "启用调试模式，显示详细的调试信息，并在 cbp2clangd 命令中添加 --debug 参数"
