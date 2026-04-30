@@ -4,6 +4,14 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.3.1] - 2026-04-29
+
+### Added
+- 编译数据库支持拖拽排序，列表最后一位作为合并目标
+
+### Changed
+- 合并日志显示完整相对路径，不再只显示父目录名
+
 ## [1.3.0] - 2026-04-29
 
 ### Added
