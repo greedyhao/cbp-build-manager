@@ -15,6 +15,7 @@ export class CbpDataManager {
     // compile_commands.json 管理
     private compileCommandsItems: CompileCommandsItem[] = [];
     private compileCommandsCheckState: Record<string, boolean> = {};
+    private compileCommandsOrder: string[] = [];
 
     // 芯片系列筛选
     private chipFilter: string | null = null; // null 表示显示全部
@@ -65,8 +66,9 @@ export class CbpDataManager {
                 return new CbpProjectItem(name, fsPath, isChecked, vscode.TreeItemCollapsibleState.None, true);
             }).filter((item): item is CbpProjectItem => item !== null);
 
-            // 加载编译数据库勾选状态
+            // 加载编译数据库勾选状态和顺序
             this.compileCommandsCheckState = state.compileCommandsCheckState || {};
+            this.compileCommandsOrder = state.compileCommandsOrder || [];
 
             // 加载芯片筛选状态
             this.chipFilter = state.chipFilter ?? null;
@@ -95,7 +97,8 @@ export class CbpDataManager {
                 queuePaths,
                 checkState,
                 chipFilter: this.chipFilter,
-                compileCommandsCheckState: this.compileCommandsCheckState
+                compileCommandsCheckState: this.compileCommandsCheckState,
+                compileCommandsOrder: this.compileCommandsOrder
             };
 
             fs.writeFileSync(this.stateFilePath, JSON.stringify(state, null, 2), 'utf-8');
@@ -123,12 +126,29 @@ export class CbpDataManager {
             '**/node_modules/**,**/.git/**,**/.vscode/**,**/.cbp-build/**'
         );
 
-        this.compileCommandsItems = files.map(f => {
-            const relativePath = path.relative(workspaceRoot, f.fsPath);
-            const isChecked = this.compileCommandsCheckState[f.fsPath] ?? false;
-            return new CompileCommandsItem(relativePath, f.fsPath, isChecked);
-        });
+        const currentPaths = new Set(files.map(f => f.fsPath));
 
+        // 清理已经不存在的路径
+        this.compileCommandsOrder = this.compileCommandsOrder.filter(p => currentPaths.has(p));
+
+        // 新发现的文件追加到末尾
+        for (const f of files) {
+            if (!this.compileCommandsOrder.includes(f.fsPath)) {
+                this.compileCommandsOrder.push(f.fsPath);
+            }
+        }
+
+        // 按顺序构建 items
+        const orderMap = new Map(this.compileCommandsOrder.map((p, i) => [p, i]));
+        this.compileCommandsItems = files
+            .map(f => {
+                const relativePath = path.relative(workspaceRoot, f.fsPath);
+                const isChecked = this.compileCommandsCheckState[f.fsPath] ?? false;
+                return new CompileCommandsItem(relativePath, f.fsPath, isChecked);
+            })
+            .sort((a, b) => (orderMap.get(a.fsPath) ?? 999) - (orderMap.get(b.fsPath) ?? 999));
+
+        this.saveState();
         this._onDidChangeTreeData.fire();
     }
 
@@ -143,6 +163,24 @@ export class CbpDataManager {
         item.isChecked = (state === vscode.TreeItemCheckboxState.Checked);
         this.compileCommandsCheckState[item.fsPath] = item.isChecked;
         this.saveState();
+    }
+
+    // 拖拽重排 compile_commands.json 顺序
+    moveCompileCommandsItem(sourceItems: CompileCommandsItem[], target?: CompileCommandsItem) {
+        const pathsToMove = sourceItems.map(s => s.fsPath);
+        // 从顺序列表中移除
+        const newOrder = this.compileCommandsOrder.filter(p => !pathsToMove.includes(p));
+
+        if (target) {
+            const insertIndex = newOrder.indexOf(target.fsPath);
+            newOrder.splice(insertIndex === -1 ? newOrder.length : insertIndex, 0, ...pathsToMove);
+        } else {
+            newOrder.push(...pathsToMove);
+        }
+
+        this.compileCommandsOrder = newOrder;
+        this.saveState();
+        this.scanCompileCommands(); // 重新排序 items
     }
 
     // 获取构建队列 (上方列表)

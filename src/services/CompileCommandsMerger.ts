@@ -199,7 +199,7 @@ export async function mergeCompileCommands(
 
 /**
  * 调用 cbp2clangd merge-compile-commands 合并多个 compile_commands.json
- * 第一个 json 路径作为合并目标，其余为源
+ * 最后一个 json 路径作为合并目标，其余为源
  */
 export async function mergeCompileCommandsFiles(
     compileCommandsPaths: string[],
@@ -232,17 +232,35 @@ export async function mergeCompileCommandsFiles(
         return false;
     }
 
-    const targetPath = existingPaths[0];
-    const sourcePaths = existingPaths.slice(1);
+    // 最后一个作为合并目标，其余为源
+    const targetPath = existingPaths[existingPaths.length - 1];
+    const sourcePaths = existingPaths.slice(0, -1);
+    // 目标放在第一位传给 cbp2clangd
+    const orderedPaths = [targetPath, ...sourcePaths];
+
+    // 计算所有路径的公共父目录作为显示根目录
+    const displayRoot = existingPaths.reduce((prefix, p) => {
+        while (prefix && !p.startsWith(prefix)) {
+            const parent = path.dirname(prefix);
+            if (parent === prefix) { return ''; }
+            prefix = parent;
+        }
+        return prefix;
+    }, path.dirname(existingPaths[0]));
+
+    const relPath = (p: string) => {
+        const dir = displayRoot ? path.relative(displayRoot, path.dirname(p)) : path.dirname(p);
+        return dir ? `${dir}/${path.basename(p)}` : path.basename(p);
+    };
 
     log(`\n\x1b[36m=== 合并 compile_commands.json ===\x1b[0m\n`);
-    log(`目标: ${path.basename(path.dirname(targetPath))}/${path.basename(targetPath)}\n`);
+    log(`目标: ${relPath(targetPath)}\n`);
     sourcePaths.forEach(p => {
-        log(`  源: ${path.basename(path.dirname(p))}/${path.basename(p)}\n`);
+        log(`  源: ${relPath(p)}\n`);
     });
 
     try {
-        const mergeArgs = ['merge-compile-commands', '--json', ...existingPaths];
+        const mergeArgs = ['merge-compile-commands', '--json', ...orderedPaths];
 
         if (debug) {
             mergeArgs.push('--debug');

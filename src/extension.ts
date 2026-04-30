@@ -214,6 +214,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     const compileCommandsTreeView = vscode.window.createTreeView('cbpCompileCommands', {
         treeDataProvider: compileCommandsProvider,
+        dragAndDropController: compileCommandsProvider,
         canSelectMany: true
     });
 
@@ -322,38 +323,14 @@ export function activate(context: vscode.ExtensionContext) {
         const checkedItems = manager.getCompileCommandsItems()
             .filter(item => item.checkboxState === vscode.TreeItemCheckboxState.Checked);
 
-        if (checkedItems.length === 0) {
-            terminal.write('没有勾选需要合并的 compile_commands.json\r\n');
-            vscode.window.showInformationMessage('没有勾选 compile_commands.json 文件，请先勾选后再合并');
+        if (checkedItems.length < 2) {
+            terminal.write('至少需要勾选 2 个 compile_commands.json 才能合并\r\n');
+            vscode.window.showInformationMessage('至少需要勾选 2 个 compile_commands.json 才能合并');
             return;
         }
 
-        // 构建队列最后一个 CBP 对应的 compile_commands.json 作为合并目标（第一个参数）
-        const queueItems = manager.getQueueItems();
-        const targetJsonPath = queueItems.length > 0
-            ? path.join(path.dirname(queueItems[queueItems.length - 1].fsPath), 'compile_commands.json')
-            : '';
-
-        // 按目标在前、其余在后的顺序排列
-        let files = checkedItems.map(item => item.fsPath);
-        if (targetJsonPath) {
-            const targetIndex = files.findIndex(f => path.normalize(f) === path.normalize(targetJsonPath));
-            if (targetIndex > 0) {
-                // 将目标 json 移到第一位
-                files = [files[targetIndex], ...files.slice(0, targetIndex), ...files.slice(targetIndex + 1)];
-            } else if (targetIndex === -1) {
-                // 目标未勾选，强制插入到第一位
-                terminal.write(`\x1b[33m构建队列最后一个项目的 compile_commands.json 未勾选，已自动加入合并目标\x1b[0m\r\n`);
-                files = [targetJsonPath, ...files];
-            }
-            // targetIndex === 0: 已经在第一位，无需调整
-        }
-
-        if (files.length < 2) {
-            terminal.write('至少需要 2 个 compile_commands.json 才能合并\r\n');
-            vscode.window.showInformationMessage('至少需要 2 个 compile_commands.json 才能合并');
-            return;
-        }
+        // 直接使用勾选项的列表顺序，第一位作为合并目标
+        const files = checkedItems.map(item => item.fsPath);
 
         const config = vscode.workspace.getConfiguration('cbpBuildManager');
         const cbp2clangPath = config.get<string>('cbp2clangPath', 'cbp2clang');
