@@ -4,6 +4,15 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.4.0] - 2026-05-11
+
+### Added
+- 构建和重新编译完成后，自动合并编译数据库中勾选的 `compile_commands.json` 文件
+- 当勾选 2 个或更多文件时，自动触发合并操作，无需手动点击合并按钮
+
+### Changed
+- `scanCompileCommands` 改为异步调用，确保扫描完成后立即执行自动合并
+
 ## [1.3.1] - 2026-04-29
 
 ### Added
