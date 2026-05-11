@@ -460,8 +460,15 @@ export function activate(context: vscode.ExtensionContext) {
             }
         }
 
-        // 刷新 compile_commands.json 视图
-        manager.scanCompileCommands();
+        // 刷新 compile_commands.json 视图并自动合并
+        await manager.scanCompileCommands();
+        const ccItems = manager.getCompileCommandsItems()
+            .filter(item => item.checkboxState === vscode.TreeItemCheckboxState.Checked);
+        if (ccItems.length >= 2) {
+            terminal.write(`\n\x1b[36m=== 自动合并 ${ccItems.length} 个 compile_commands.json ===\x1b[0m\n`);
+            const ccFiles = ccItems.map(item => item.fsPath);
+            await mergeCompileCommandsFiles(ccFiles, cbp2clangPath, debugMode, (msg) => terminal.write(msg));
+        }
 
         terminal.write(`\n\x1b[36m=== 构建流程结束 ===\x1b[0m\n`);
     }));
@@ -572,7 +579,14 @@ export function activate(context: vscode.ExtensionContext) {
         }
 
         // 刷新 compile_commands.json 视图
-        manager.scanCompileCommands();
+        await manager.scanCompileCommands();
+        const ccItems2 = manager.getCompileCommandsItems()
+            .filter(item => item.checkboxState === vscode.TreeItemCheckboxState.Checked);
+        if (ccItems2.length >= 2) {
+            terminal.write(`\n\x1b[36m=== 自动合并 ${ccItems2.length} 个 compile_commands.json ===\x1b[0m\n`);
+            const ccFiles2 = ccItems2.map(item => item.fsPath);
+            await mergeCompileCommandsFiles(ccFiles2, cbp2clangPath, debugMode, (msg) => terminal.write(msg));
+        }
 
         terminal.write(`\n\x1b[36m=== 重新编译流程结束 ===\x1b[0m\n`);
     }));
