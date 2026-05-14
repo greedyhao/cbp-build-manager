@@ -19,7 +19,7 @@ const MIN_REQUIRED_CBP2CLANG_VERSION = '1.4.0';
 
 // Import from modules
 import { CbpDataManager } from './services/DataManager.js';
-import { createOrShowTerminal, runCommand, runCommandInDirectory } from './terminal/TerminalManager.js';
+import { createOrShowTerminal, runCommand, runCommandInDirectory, stopCurrentBuild } from './terminal/TerminalManager.js';
 import { compareVersions } from './utils/index.js';
 import { mergeCompileCommandsFiles } from './services/index.js';
 import { CompileCommandsProvider } from './providers/CompileCommandsProvider.js';
@@ -161,6 +161,14 @@ import { getGlobalTerminal, getGlobalPty } from './terminal/TerminalManager';
 export function activate(context: vscode.ExtensionContext) {
     const manager = new CbpDataManager();
     manager.setContext(context);
+
+    // 全局构建状态
+    let isBuilding = false;
+
+    function setBuildingState(building: boolean) {
+        isBuilding = building;
+        vscode.commands.executeCommand('setContext', 'cbpBuildManager.isBuilding', building);
+    }
 
     // 导入 Provider
     const { BuildQueueProvider, ProjectLibraryProvider } = require('./providers');
@@ -360,279 +368,375 @@ export function activate(context: vscode.ExtensionContext) {
         }
     }));
 
+    // 4.5 停止构建
+    context.subscriptions.push(vscode.commands.registerCommand('cbp-build-manager.stopBuild', () => {
+        const terminal = createOrShowTerminal();
+        if (stopCurrentBuild()) {
+            terminal.write(`\x1b[33m>>> 正在停止编译...\x1b[0m\n`);
+        } else {
+            terminal.write(`\x1b[33m>>> 没有正在运行的编译任务\x1b[0m\n`);
+        }
+    }));
+
     // 5. 执行构建 (核心功能保留)
     context.subscriptions.push(vscode.commands.registerCommand('cbp-build-manager.buildSelected', async () => {
-        // 检测未保存文件并提示保存
-        if (!(await checkAndPromptSave())) {
-            return; // 用户取消操作
-        }
-
-        const terminal = createOrShowTerminal();
-        terminal.write(`\x1b[36m=== 开始构建流程 ===\x1b[0m\n`);
-
-        // 获取所有在队列中且被勾选的项目
-        const queue = manager.getQueueItems();
-        const selectedProjects = queue.filter(p => p.checkboxState === vscode.TreeItemCheckboxState.Checked);
-
-        terminal.write(`选中项目数: ${selectedProjects.length}\n`);
-
-        if (selectedProjects.length === 0) {
-            vscode.window.showInformationMessage('没有选中要构建的项目。');
+        if (isBuilding) {
+            vscode.window.showInformationMessage('已有构建任务正在运行。');
             return;
         }
+        setBuildingState(true);
 
-        const config = vscode.workspace.getConfiguration('cbpBuildManager');
-        const cbp2clangPath = config.get<string>('cbp2clangPath', 'cbp2clang');
-        const convertCommandTemplate = config.get<string>('convertCommand', '{cbp2clang} {cbpFile} {compileCommands} -l ld');
-        const buildScript = config.get<string>('buildCommand', './build.bat');
-        const ninjaPath = config.get<string>('ninjaPath', '');
-        const noHeaderInsertion = config.get<boolean>('noHeaderInsertion', false);
-        const debugMode = config.get<boolean>('debug', false);
-        const stopOnFailure = config.get<boolean>('stopOnFailure', false);
-
-        if (debugMode) {
-            terminal.write(`\x1b[36m[调试] 调试模式已开启\x1b[0m\n`);
-        }
-
-        // 检查 cbp2clangd 版本
         try {
-            terminal.write(`\n\x1b[36m=== 检查 cbp2clangd 版本 ===\x1b[0m\n`);
-            const version = await checkCbp2clangVersion(cbp2clangPath);
-            const isCompatible = compareVersions(version, MIN_REQUIRED_CBP2CLANG_VERSION);
+            // 检测未保存文件并提示保存
+            if (!(await checkAndPromptSave())) {
+                return; // 用户取消操作
+            }
 
-            if (isCompatible) {
-                terminal.write(`cbp2clangd 版本: ${version} (满足要求，最小要求版本: ${MIN_REQUIRED_CBP2CLANG_VERSION})\n`);
-            } else {
-                const errorMessage = `cbp2clangd 版本 ${version} 低于最小要求版本 ${MIN_REQUIRED_CBP2CLANG_VERSION}，请升级后再试。`;
+            const terminal = createOrShowTerminal();
+            terminal.write(`\x1b[36m=== 开始构建流程 ===\x1b[0m\n`);
+
+            // 获取所有在队列中且被勾选的项目
+            const queue = manager.getQueueItems();
+            const selectedProjects = queue.filter(p => p.checkboxState === vscode.TreeItemCheckboxState.Checked);
+
+            terminal.write(`选中项目数: ${selectedProjects.length}\n`);
+
+            if (selectedProjects.length === 0) {
+                vscode.window.showInformationMessage('没有选中要构建的项目。');
+                return;
+            }
+
+            const config = vscode.workspace.getConfiguration('cbpBuildManager');
+            const cbp2clangPath = config.get<string>('cbp2clangPath', 'cbp2clang');
+            const convertCommandTemplate = config.get<string>('convertCommand', '{cbp2clang} {cbpFile} {compileCommands} -l ld');
+            const buildScript = config.get<string>('buildCommand', './build.bat');
+            const ninjaPath = config.get<string>('ninjaPath', '');
+            const noHeaderInsertion = config.get<boolean>('noHeaderInsertion', false);
+            const debugMode = config.get<boolean>('debug', false);
+            const stopOnFailure = config.get<boolean>('stopOnFailure', false);
+
+            if (debugMode) {
+                terminal.write(`\x1b[36m[调试] 调试模式已开启\x1b[0m\n`);
+            }
+
+            // 检查 cbp2clangd 版本
+            try {
+                terminal.write(`\n\x1b[36m=== 检查 cbp2clangd 版本 ===\x1b[0m\n`);
+                const version = await checkCbp2clangVersion(cbp2clangPath);
+                const isCompatible = compareVersions(version, MIN_REQUIRED_CBP2CLANG_VERSION);
+
+                if (isCompatible) {
+                    terminal.write(`cbp2clangd 版本: ${version} (满足要求，最小要求版本: ${MIN_REQUIRED_CBP2CLANG_VERSION})\n`);
+                } else {
+                    const errorMessage = `cbp2clangd 版本 ${version} 低于最小要求版本 ${MIN_REQUIRED_CBP2CLANG_VERSION}，请升级后再试。`;
+                    terminal.write(`\x1b[31m错误: ${errorMessage}\x1b[0m\n`);
+                    vscode.window.showErrorMessage(errorMessage);
+                    return; // 禁止编译
+                }
+            } catch (error) {
+                const errorMessage = `无法检查 cbp2clangd 版本: ${(error as Error).message}，请确保 cbp2clangd 已正确安装。`;
                 terminal.write(`\x1b[31m错误: ${errorMessage}\x1b[0m\n`);
                 vscode.window.showErrorMessage(errorMessage);
                 return; // 禁止编译
             }
-        } catch (error) {
-            const errorMessage = `无法检查 cbp2clangd 版本: ${(error as Error).message}，请确保 cbp2clangd 已正确安装。`;
-            terminal.write(`\x1b[31m错误: ${errorMessage}\x1b[0m\n`);
-            vscode.window.showErrorMessage(errorMessage);
-            return; // 禁止编译
-        }
 
-        for (const project of selectedProjects) {
-            terminal.write(`\n\x1b[33m>>> 处理项目: ${project.label}\x1b[0m\n`);
+            const diagnostics = { warnings: [] as string[], errors: [] as string[] };
+            let stopped = false;
 
-            try {
-                const projectDir = path.dirname(project.fsPath);
+            for (const project of selectedProjects) {
+                if (stopped) { break; }
 
-                // 获取 VSCode 工作区路径
-                const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || projectDir;
+                terminal.write(`\n\x1b[33m>>> 处理项目: ${project.label}\x1b[0m\n`);
 
-                // 变量替换
-                let convertCommand = convertCommandTemplate
-                    .replace('{cbp2clang}', cbp2clangPath)
-                    .replace('{cbpFile}', project.fsPath)
-                    .replace('{compileCommands}', workspacePath);
+                try {
+                    const projectDir = path.dirname(project.fsPath);
 
-                if (ninjaPath) {
-                    convertCommand += ` --ninja "${ninjaPath}"`;
+                    // 获取 VSCode 工作区路径
+                    const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || projectDir;
+
+                    // 变量替换
+                    let convertCommand = convertCommandTemplate
+                        .replace('{cbp2clang}', cbp2clangPath)
+                        .replace('{cbpFile}', project.fsPath)
+                        .replace('{compileCommands}', workspacePath);
+
+                    if (ninjaPath) {
+                        convertCommand += ` --ninja "${ninjaPath}"`;
+                    }
+
+                    if (noHeaderInsertion) {
+                        convertCommand += ` --no-header-insertion`;
+                    }
+
+                    if (debugMode) {
+                        convertCommand += ` --debug`;
+                    }
+
+                    terminal.write(`执行的转换命令: ${convertCommand}\n`);
+                    terminal.write(`\x1b[32m[1/2] 生成 Compile Commands...\x1b[0m\n`);
+                    await runCommand(convertCommand);
+
+                    terminal.write(`\x1b[32m[2/2] 执行构建脚本...\x1b[0m\n`);
+                    await runCommandInDirectory(buildScript, projectDir, diagnostics);
+
+                    terminal.write(`\x1b[32m>>> 项目 ${project.label} 完成.\x1b[0m\n`);
+                } catch (error) {
+                    if ((error as Error).message === 'STOPPED') {
+                        terminal.write(`\x1b[33m>>> 项目 ${project.label} 已停止\x1b[0m\n`);
+                        stopped = true;
+                        break;
+                    }
+                    terminal.write(`\x1b[31m!!! 项目 ${project.label} 失败: ${error}\x1b[0m\n`);
+                    if (stopOnFailure) {
+                        terminal.write(`\x1b[31m>>> 编译失败，停止后续项目\x1b[0m\n`);
+                        break;
+                    }
+                    // 继续下一个项目
                 }
-
-                if (noHeaderInsertion) {
-                    convertCommand += ` --no-header-insertion`;
-                }
-
-                if (debugMode) {
-                    convertCommand += ` --debug`;
-                }
-
-                terminal.write(`执行的转换命令: ${convertCommand}\n`);
-                terminal.write(`\x1b[32m[1/2] 生成 Compile Commands...\x1b[0m\n`);
-                await runCommand(convertCommand);
-
-                terminal.write(`\x1b[32m[2/2] 执行构建脚本...\x1b[0m\n`);
-                await runCommandInDirectory(buildScript, projectDir);
-
-                terminal.write(`\x1b[32m>>> 项目 ${project.label} 完成.\x1b[0m\n`);
-            } catch (error) {
-                terminal.write(`\x1b[31m!!! 项目 ${project.label} 失败: ${error}\x1b[0m\n`);
-                if (stopOnFailure) {
-                    terminal.write(`\x1b[31m>>> 编译失败，停止后续项目\x1b[0m\n`);
-                    break;
-                }
-                // 继续下一个项目
             }
-        }
 
-        // 刷新 compile_commands.json 视图并自动合并
-        await manager.scanCompileCommands();
-        const ccItems = manager.getCompileCommandsItems()
-            .filter(item => item.checkboxState === vscode.TreeItemCheckboxState.Checked);
-        if (ccItems.length >= 2) {
-            terminal.write(`\n\x1b[36m=== 自动合并 ${ccItems.length} 个 compile_commands.json ===\x1b[0m\n`);
-            const ccFiles = ccItems.map(item => item.fsPath);
-            await mergeCompileCommandsFiles(ccFiles, cbp2clangPath, debugMode, (msg) => terminal.write(msg));
-        }
+            // 刷新 compile_commands.json 视图并自动合并
+            await manager.scanCompileCommands();
+            const ccItems = manager.getCompileCommandsItems()
+                .filter(item => item.checkboxState === vscode.TreeItemCheckboxState.Checked);
+            if (ccItems.length >= 2) {
+                terminal.write(`\n\x1b[36m=== 自动合并 ${ccItems.length} 个 compile_commands.json ===\x1b[0m\n`);
+                const ccFiles = ccItems.map(item => item.fsPath);
+                await mergeCompileCommandsFiles(ccFiles, cbp2clangPath, debugMode, (msg) => terminal.write(msg));
+            }
 
-        terminal.write(`\n\x1b[36m=== 构建流程结束 ===\x1b[0m\n`);
+            terminal.write(`\n\x1b[36m=== 构建流程结束 ===\x1b[0m\n`);
+
+            // 汇总显示诊断信息
+            if (diagnostics.errors.length > 0 || diagnostics.warnings.length > 0) {
+                terminal.write(`\n\x1b[36m========================================\x1b[0m\n`);
+                terminal.write(`\x1b[36m=== 编译诊断汇总 ===\x1b[0m\n`);
+                if (diagnostics.errors.length > 0) {
+                    terminal.write(`\x1b[31m--- 错误 (${diagnostics.errors.length}) ---\x1b[0m\n`);
+                    diagnostics.errors.forEach(err => terminal.write(`\x1b[31m${err}\x1b[0m\n`));
+                }
+                if (diagnostics.warnings.length > 0) {
+                    terminal.write(`\x1b[33m--- 警告 (${diagnostics.warnings.length}) ---\x1b[0m\n`);
+                    diagnostics.warnings.forEach(warn => terminal.write(`\x1b[33m${warn}\x1b[0m\n`));
+                }
+                terminal.write(`\x1b[36m=== 诊断汇总结束 ===\x1b[0m\n`);
+                terminal.write(`\x1b[36m========================================\x1b[0m\n`);
+            }
+        } finally {
+            setBuildingState(false);
+        }
     }));
 
     // 6. 执行重新编译 (先清理再构建)
     context.subscriptions.push(vscode.commands.registerCommand('cbp-build-manager.rebuildSelected', async () => {
-        // 检测未保存文件并提示保存
-        if (!(await checkAndPromptSave())) {
-            return; // 用户取消操作
-        }
-
-        const terminal = createOrShowTerminal();
-        terminal.write(`\x1b[36m=== 开始重新编译流程 ===\x1b[0m\n`);
-
-        // 获取所有在队列中且被勾选的项目
-        const queue = manager.getQueueItems();
-        const selectedProjects = queue.filter(p => p.checkboxState === vscode.TreeItemCheckboxState.Checked);
-
-        terminal.write(`选中项目数: ${selectedProjects.length}\n`);
-
-        if (selectedProjects.length === 0) {
-            vscode.window.showInformationMessage('没有选中要重新编译的项目。');
+        if (isBuilding) {
+            vscode.window.showInformationMessage('已有构建任务正在运行。');
             return;
         }
+        setBuildingState(true);
 
-        const config = vscode.workspace.getConfiguration('cbpBuildManager');
-        const cbp2clangPath = config.get<string>('cbp2clangPath', 'cbp2clang');
-        const convertCommandTemplate = config.get<string>('convertCommand', '{cbp2clang} {cbpFile} {compileCommands} -l ld');
-        const buildScript = config.get<string>('buildCommand', './build.bat');
-        const ninjaPath = config.get<string>('ninjaPath', '');
-        const noHeaderInsertion = config.get<boolean>('noHeaderInsertion', false);
-        const debugMode = config.get<boolean>('debug', false);
-        const stopOnFailure = config.get<boolean>('stopOnFailure', false);
-
-        if (debugMode) {
-            terminal.write(`\x1b[36m[调试] 调试模式已开启\x1b[0m\n`);
-        }
-
-        // 检查 cbp2clangd 版本
         try {
-            terminal.write(`\n\x1b[36m=== 检查 cbp2clangd 版本 ===\x1b[0m\n`);
-            const version = await checkCbp2clangVersion(cbp2clangPath);
-            const isCompatible = compareVersions(version, MIN_REQUIRED_CBP2CLANG_VERSION);
+            // 检测未保存文件并提示保存
+            if (!(await checkAndPromptSave())) {
+                return; // 用户取消操作
+            }
 
-            if (isCompatible) {
-                terminal.write(`cbp2clangd 版本: ${version} (满足要求，最小要求版本: ${MIN_REQUIRED_CBP2CLANG_VERSION})\n`);
-            } else {
-                const errorMessage = `cbp2clangd 版本 ${version} 低于最小要求版本 ${MIN_REQUIRED_CBP2CLANG_VERSION}，请升级后再试。`;
+            const terminal = createOrShowTerminal();
+            terminal.write(`\x1b[36m=== 开始重新编译流程 ===\x1b[0m\n`);
+
+            // 获取所有在队列中且被勾选的项目
+            const queue = manager.getQueueItems();
+            const selectedProjects = queue.filter(p => p.checkboxState === vscode.TreeItemCheckboxState.Checked);
+
+            terminal.write(`选中项目数: ${selectedProjects.length}\n`);
+
+            if (selectedProjects.length === 0) {
+                vscode.window.showInformationMessage('没有选中要重新编译的项目。');
+                return;
+            }
+
+            const config = vscode.workspace.getConfiguration('cbpBuildManager');
+            const cbp2clangPath = config.get<string>('cbp2clangPath', 'cbp2clang');
+            const convertCommandTemplate = config.get<string>('convertCommand', '{cbp2clang} {cbpFile} {compileCommands} -l ld');
+            const buildScript = config.get<string>('buildCommand', './build.bat');
+            const ninjaPath = config.get<string>('ninjaPath', '');
+            const noHeaderInsertion = config.get<boolean>('noHeaderInsertion', false);
+            const debugMode = config.get<boolean>('debug', false);
+            const stopOnFailure = config.get<boolean>('stopOnFailure', false);
+
+            if (debugMode) {
+                terminal.write(`\x1b[36m[调试] 调试模式已开启\x1b[0m\n`);
+            }
+
+            // 检查 cbp2clangd 版本
+            try {
+                terminal.write(`\n\x1b[36m=== 检查 cbp2clangd 版本 ===\x1b[0m\n`);
+                const version = await checkCbp2clangVersion(cbp2clangPath);
+                const isCompatible = compareVersions(version, MIN_REQUIRED_CBP2CLANG_VERSION);
+
+                if (isCompatible) {
+                    terminal.write(`cbp2clangd 版本: ${version} (满足要求，最小要求版本: ${MIN_REQUIRED_CBP2CLANG_VERSION})\n`);
+                } else {
+                    const errorMessage = `cbp2clangd 版本 ${version} 低于最小要求版本 ${MIN_REQUIRED_CBP2CLANG_VERSION}，请升级后再试。`;
+                    terminal.write(`\x1b[31m错误: ${errorMessage}\x1b[0m\n`);
+                    vscode.window.showErrorMessage(errorMessage);
+                    return; // 禁止编译
+                }
+            } catch (error) {
+                const errorMessage = `无法检查 cbp2clangd 版本: ${(error as Error).message}，请确保 cbp2clangd 已正确安装。`;
                 terminal.write(`\x1b[31m错误: ${errorMessage}\x1b[0m\n`);
                 vscode.window.showErrorMessage(errorMessage);
                 return; // 禁止编译
             }
-        } catch (error) {
-            const errorMessage = `无法检查 cbp2clangd 版本: ${(error as Error).message}，请确保 cbp2clangd 已正确安装。`;
-            terminal.write(`\x1b[31m错误: ${errorMessage}\x1b[0m\n`);
-            vscode.window.showErrorMessage(errorMessage);
-            return; // 禁止编译
-        }
 
-        for (const project of selectedProjects) {
-            terminal.write(`\n\x1b[33m>>> 处理项目: ${project.label}\x1b[0m\n`);
+            const diagnostics = { warnings: [] as string[], errors: [] as string[] };
+            let stopped = false;
 
-            try {
-                const projectDir = path.dirname(project.fsPath);
+            for (const project of selectedProjects) {
+                if (stopped) { break; }
 
-                // 获取 VSCode 工作区路径
-                const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || projectDir;
+                terminal.write(`\n\x1b[33m>>> 处理项目: ${project.label}\x1b[0m\n`);
 
-                // 1. 运行 ninja -t clean 清理
-                terminal.write(`\x1b[32m[0/3] 清理构建文件...\x1b[0m\n`);
-                const ninjaCommand = ninjaPath ? `${ninjaPath} -t clean` : `ninja -t clean`;
-                await runCommandInDirectory(ninjaCommand, projectDir);
+                try {
+                    const projectDir = path.dirname(project.fsPath);
 
-                // 2. 变量替换
-                let convertCommand = convertCommandTemplate
-                    .replace('{cbp2clang}', cbp2clangPath)
-                    .replace('{cbpFile}', project.fsPath)
-                    .replace('{compileCommands}', workspacePath);
+                    // 获取 VSCode 工作区路径
+                    const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || projectDir;
 
-                if (ninjaPath) {
-                    convertCommand += ` --ninja "${ninjaPath}"`;
+                    // 1. 运行 ninja -t clean 清理
+                    terminal.write(`\x1b[32m[0/3] 清理构建文件...\x1b[0m\n`);
+                    const ninjaCommand = ninjaPath ? `${ninjaPath} -t clean` : `ninja -t clean`;
+                    await runCommandInDirectory(ninjaCommand, projectDir);
+
+                    // 2. 变量替换
+                    let convertCommand = convertCommandTemplate
+                        .replace('{cbp2clang}', cbp2clangPath)
+                        .replace('{cbpFile}', project.fsPath)
+                        .replace('{compileCommands}', workspacePath);
+
+                    if (ninjaPath) {
+                        convertCommand += ` --ninja "${ninjaPath}"`;
+                    }
+
+                    if (noHeaderInsertion) {
+                        convertCommand += ` --no-header-insertion`;
+                    }
+
+                    if (debugMode) {
+                        convertCommand += ` --debug`;
+                    }
+
+                    terminal.write(`执行的转换命令: ${convertCommand}\n`);
+                    terminal.write(`\x1b[32m[1/3] 生成 Compile Commands...\x1b[0m\n`);
+                    await runCommand(convertCommand);
+
+                    terminal.write(`\x1b[32m[2/3] 执行构建脚本...\x1b[0m\n`);
+                    await runCommandInDirectory(buildScript, projectDir, diagnostics);
+
+                    terminal.write(`\x1b[32m>>> 项目 ${project.label} 重新编译完成.\x1b[0m\n`);
+                } catch (error) {
+                    if ((error as Error).message === 'STOPPED') {
+                        terminal.write(`\x1b[33m>>> 项目 ${project.label} 已停止\x1b[0m\n`);
+                        stopped = true;
+                        break;
+                    }
+                    terminal.write(`\x1b[31m!!! 项目 ${project.label} 重新编译失败: ${error}\x1b[0m\n`);
+                    if (stopOnFailure) {
+                        terminal.write(`\x1b[31m>>> 编译失败，停止后续项目\x1b[0m\n`);
+                        break;
+                    }
+                    // 继续下一个项目
                 }
-
-                if (noHeaderInsertion) {
-                    convertCommand += ` --no-header-insertion`;
-                }
-
-                if (debugMode) {
-                    convertCommand += ` --debug`;
-                }
-
-                terminal.write(`执行的转换命令: ${convertCommand}\n`);
-                terminal.write(`\x1b[32m[1/3] 生成 Compile Commands...\x1b[0m\n`);
-                await runCommand(convertCommand);
-
-                terminal.write(`\x1b[32m[2/3] 执行构建脚本...\x1b[0m\n`);
-                await runCommandInDirectory(buildScript, projectDir);
-
-                terminal.write(`\x1b[32m>>> 项目 ${project.label} 重新编译完成.\x1b[0m\n`);
-            } catch (error) {
-                terminal.write(`\x1b[31m!!! 项目 ${project.label} 重新编译失败: ${error}\x1b[0m\n`);
-                if (stopOnFailure) {
-                    terminal.write(`\x1b[31m>>> 编译失败，停止后续项目\x1b[0m\n`);
-                    break;
-                }
-                // 继续下一个项目
             }
-        }
 
-        // 刷新 compile_commands.json 视图
-        await manager.scanCompileCommands();
-        const ccItems2 = manager.getCompileCommandsItems()
-            .filter(item => item.checkboxState === vscode.TreeItemCheckboxState.Checked);
-        if (ccItems2.length >= 2) {
-            terminal.write(`\n\x1b[36m=== 自动合并 ${ccItems2.length} 个 compile_commands.json ===\x1b[0m\n`);
-            const ccFiles2 = ccItems2.map(item => item.fsPath);
-            await mergeCompileCommandsFiles(ccFiles2, cbp2clangPath, debugMode, (msg) => terminal.write(msg));
-        }
+            // 刷新 compile_commands.json 视图
+            await manager.scanCompileCommands();
+            const ccItems2 = manager.getCompileCommandsItems()
+                .filter(item => item.checkboxState === vscode.TreeItemCheckboxState.Checked);
+            if (ccItems2.length >= 2) {
+                terminal.write(`\n\x1b[36m=== 自动合并 ${ccItems2.length} 个 compile_commands.json ===\x1b[0m\n`);
+                const ccFiles2 = ccItems2.map(item => item.fsPath);
+                await mergeCompileCommandsFiles(ccFiles2, cbp2clangPath, debugMode, (msg) => terminal.write(msg));
+            }
 
-        terminal.write(`\n\x1b[36m=== 重新编译流程结束 ===\x1b[0m\n`);
+            terminal.write(`\n\x1b[36m=== 重新编译流程结束 ===\x1b[0m\n`);
+
+            // 汇总显示诊断信息
+            if (diagnostics.errors.length > 0 || diagnostics.warnings.length > 0) {
+                terminal.write(`\n\x1b[36m========================================\x1b[0m\n`);
+                terminal.write(`\x1b[36m=== 编译诊断汇总 ===\x1b[0m\n`);
+                if (diagnostics.errors.length > 0) {
+                    terminal.write(`\x1b[31m--- 错误 (${diagnostics.errors.length}) ---\x1b[0m\n`);
+                    diagnostics.errors.forEach(err => terminal.write(`\x1b[31m${err}\x1b[0m\n`));
+                }
+                if (diagnostics.warnings.length > 0) {
+                    terminal.write(`\x1b[33m--- 警告 (${diagnostics.warnings.length}) ---\x1b[0m\n`);
+                    diagnostics.warnings.forEach(warn => terminal.write(`\x1b[33m${warn}\x1b[0m\n`));
+                }
+                terminal.write(`\x1b[36m=== 诊断汇总结束 ===\x1b[0m\n`);
+                terminal.write(`\x1b[36m========================================\x1b[0m\n`);
+            }
+        } finally {
+            setBuildingState(false);
+        }
     }));
 
     // 7. 执行清理 (仅清理构建文件)
     context.subscriptions.push(vscode.commands.registerCommand('cbp-build-manager.cleanSelected', async () => {
-        // 检测未保存文件并提示保存
-        if (!(await checkAndPromptSave())) {
-            return; // 用户取消操作
-        }
-
-        const terminal = createOrShowTerminal();
-        terminal.write(`\x1b[36m=== 开始清理流程 ===\x1b[0m\n`);
-
-        // 获取所有在队列中且被勾选的项目
-        const queue = manager.getQueueItems();
-        const selectedProjects = queue.filter(p => p.checkboxState === vscode.TreeItemCheckboxState.Checked);
-
-        terminal.write(`选中项目数: ${selectedProjects.length}\n`);
-
-        if (selectedProjects.length === 0) {
-            vscode.window.showInformationMessage('没有选中要清理的项目。');
+        if (isBuilding) {
+            vscode.window.showInformationMessage('已有构建任务正在运行。');
             return;
         }
+        setBuildingState(true);
 
-        const config = vscode.workspace.getConfiguration('cbpBuildManager');
-        const ninjaPath = config.get<string>('ninjaPath', '');
-
-        for (const project of selectedProjects) {
-            terminal.write(`\n\x1b[33m>>> 处理项目: ${project.label}\x1b[0m\n`);
-
-            try {
-                const projectDir = path.dirname(project.fsPath);
-
-                // 运行 ninja -t clean 清理
-                terminal.write(`\x1b[32m[1/1] 清理构建文件...\x1b[0m\n`);
-                const ninjaCommand = ninjaPath ? `${ninjaPath} -t clean` : `ninja -t clean`;
-                await runCommandInDirectory(ninjaCommand, projectDir);
-
-                terminal.write(`\x1b[32m>>> 项目 ${project.label} 清理完成.\x1b[0m\n`);
-            } catch (error) {
-                terminal.write(`\x1b[31m!!! 项目 ${project.label} 清理失败: ${error}\x1b[0m\n`);
-                // 可以选择是否 continue，这里默认继续下一个
+        try {
+            // 检测未保存文件并提示保存
+            if (!(await checkAndPromptSave())) {
+                return; // 用户取消操作
             }
+
+            const terminal = createOrShowTerminal();
+            terminal.write(`\x1b[36m=== 开始清理流程 ===\x1b[0m\n`);
+
+            // 获取所有在队列中且被勾选的项目
+            const queue = manager.getQueueItems();
+            const selectedProjects = queue.filter(p => p.checkboxState === vscode.TreeItemCheckboxState.Checked);
+
+            terminal.write(`选中项目数: ${selectedProjects.length}\n`);
+
+            if (selectedProjects.length === 0) {
+                vscode.window.showInformationMessage('没有选中要清理的项目。');
+                return;
+            }
+
+            const config = vscode.workspace.getConfiguration('cbpBuildManager');
+            const ninjaPath = config.get<string>('ninjaPath', '');
+
+            for (const project of selectedProjects) {
+                terminal.write(`\n\x1b[33m>>> 处理项目: ${project.label}\x1b[0m\n`);
+
+                try {
+                    const projectDir = path.dirname(project.fsPath);
+
+                    // 运行 ninja -t clean 清理
+                    terminal.write(`\x1b[32m[1/1] 清理构建文件...\x1b[0m\n`);
+                    const ninjaCommand = ninjaPath ? `${ninjaPath} -t clean` : `ninja -t clean`;
+                    await runCommandInDirectory(ninjaCommand, projectDir);
+
+                    terminal.write(`\x1b[32m>>> 项目 ${project.label} 清理完成.\x1b[0m\n`);
+                } catch (error) {
+                    if ((error as Error).message === 'STOPPED') {
+                        terminal.write(`\x1b[33m>>> 项目 ${project.label} 已停止\x1b[0m\n`);
+                        break;
+                    }
+                    terminal.write(`\x1b[31m!!! 项目 ${project.label} 清理失败: ${error}\x1b[0m\n`);
+                    // 可以选择是否 continue，这里默认继续下一个
+                }
+            }
+            terminal.write(`\n\x1b[36m=== 清理流程结束 ===\x1b[0m\n`);
+        } finally {
+            setBuildingState(false);
         }
-        terminal.write(`\n\x1b[36m=== 清理流程结束 ===\x1b[0m\n`);
     }));
 }
 

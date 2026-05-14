@@ -53,6 +53,11 @@
         "icon": "$(trash)"
       },
       {
+        "command": "cbp-build-manager.stopBuild",
+        "title": "停止编译",
+        "icon": "$(debug-stop)"
+      },
+      {
         "command": "cbp-build-manager.filterByChip",
         "title": "按芯片系列筛选",
         "icon": "$(filter)"
@@ -101,7 +106,12 @@
         {
           "command": "cbp-build-manager.buildSelected",
           "group": "navigation@1",
-          "when": "view == cbpBuildQueue"
+          "when": "view == cbpBuildQueue && !cbpBuildManager.isBuilding"
+        },
+        {
+          "command": "cbp-build-manager.stopBuild",
+          "group": "navigation@1",
+          "when": "view == cbpBuildQueue && cbpBuildManager.isBuilding"
         },
         {
           "command": "cbp-build-manager.refreshProjects",
@@ -111,17 +121,17 @@
         {
           "command": "cbp-build-manager.removeFromBuild",
           "group": "navigation@4",
-          "when": "view == cbpBuildQueue"
+          "when": "view == cbpBuildQueue && !cbpBuildManager.isBuilding"
         },
         {
           "command": "cbp-build-manager.rebuildSelected",
           "group": "navigation@2",
-          "when": "view == cbpBuildQueue"
+          "when": "view == cbpBuildQueue && !cbpBuildManager.isBuilding"
         },
         {
           "command": "cbp-build-manager.cleanSelected",
           "group": "navigation@3",
-          "when": "view == cbpBuildQueue"
+          "when": "view == cbpBuildQueue && !cbpBuildManager.isBuilding"
         },
         {
           "command": "cbp-build-manager.addToBuild",

@@ -110,6 +110,34 @@ export function setGlobalTerminal(terminal: vscode.Terminal | null, pty: BuildTe
     g_pty = pty;
 }
 
+// --- 诊断信息收集器 ---
+
+export interface DiagnosticsCollector {
+    warnings: string[];
+    errors: string[];
+}
+
+// --- 构建进程管理 ---
+
+let currentBuildChild: cp.ChildProcess | null = null;
+let stopRequested = false;
+
+export function stopCurrentBuild(): boolean {
+    stopRequested = true;
+    if (currentBuildChild && !currentBuildChild.killed) {
+        currentBuildChild.kill();
+        if (process.platform === 'win32' && currentBuildChild.pid) {
+            try {
+                cp.execSync(`taskkill /pid ${currentBuildChild.pid} /T /F`, { windowsHide: true });
+            } catch {
+                // 进程可能已经退出，忽略错误
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
 // --- 命令执行 ---
 
 export function runCommand(cmd: string): Promise<void> {
@@ -118,7 +146,7 @@ export function runCommand(cmd: string): Promise<void> {
 
 // --- 命令执行函数 (核心修改) ---
 
-export function runCommandInDirectory(cmd: string, cwd: string | undefined): Promise<void> {
+export function runCommandInDirectory(cmd: string, cwd: string | undefined, collector?: DiagnosticsCollector): Promise<void> {
     const pty = createOrShowTerminal();
 
     return new Promise((resolve, reject) => {
@@ -167,6 +195,7 @@ export function runCommandInDirectory(cmd: string, cwd: string | undefined): Pro
 
         try {
             const child = cp.spawn(spawnCmd, spawnArgs, spawnOptions);
+            currentBuildChild = child;
 
             // 定义行处理逻辑：模拟 Ninja 的 TTY 行为
             const handleLineOutput = (line: string) => {
@@ -185,6 +214,15 @@ export function runCommandInDirectory(cmd: string, cwd: string | undefined): Pro
                     let processedLine = line;
                     if (cwd) {
                         processedLine = processBuildCommandPath(processedLine, cwd);
+                    }
+
+                    // 收集诊断信息
+                    if (collector) {
+                        if (/:\s*error:/i.test(processedLine) || /\berror\b/i.test(processedLine)) {
+                            collector.errors.push(processedLine);
+                        } else if (/:\s*warning:/i.test(processedLine) || /\bwarning\b/i.test(processedLine)) {
+                            collector.warnings.push(processedLine);
+                        }
                     }
 
                     pty.write(`\r\n${processedLine}`);
@@ -210,12 +248,18 @@ export function runCommandInDirectory(cmd: string, cwd: string | undefined): Pro
             }
 
             child.on('close', (code: number) => {
+                currentBuildChild = null;
                 // 确保缓冲区最后的内容被打印
                 lineBuffer.flush();
                 // 最后换个行，结束进度条状态
                 pty.write('\r\n');
 
-                if (code === 0) {
+                const wasStopped = stopRequested;
+                stopRequested = false;
+
+                if (wasStopped) {
+                    reject(new Error('STOPPED'));
+                } else if (code === 0) {
                     resolve();
                 } else {
                     reject(new Error(`Exit code ${code}`));
@@ -223,6 +267,8 @@ export function runCommandInDirectory(cmd: string, cwd: string | undefined): Pro
             });
 
             child.on('error', (err: Error) => {
+                currentBuildChild = null;
+                stopRequested = false;
                 pty.write(`\x1b[31mSpawn Error: ${err.message}\x1b[0m\r\n`);
                 reject(err);
             });
