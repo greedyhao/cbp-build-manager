@@ -4,6 +4,16 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.5.0] - 2026-05-14
+
+### Added
+- 新增编译时停止功能：编译过程中工具栏显示"停止"按钮，可随时中断编译
+- 新增编译诊断汇总：构建/重新编译完成后，自动提取并汇总显示所有警告和错误信息
+- 构建状态互斥保护：编译进行中时防止重复点击构建/重新编译/清理按钮
+
+### Changed
+- 诊断汇总信息显示在构建流程结束后，避免被后续日志淹没
+
 ## [1.4.0] - 2026-05-11
 
 ### Added
