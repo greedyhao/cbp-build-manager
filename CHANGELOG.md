@@ -4,6 +4,11 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.5.1] - 2026-05-14
+
+### Changed
+- 更新 cbp2clangd 最低版本要求从 v1.4.0 提升至 v1.4.1
+
 ## [1.5.0] - 2026-05-14
 
 ### Added
