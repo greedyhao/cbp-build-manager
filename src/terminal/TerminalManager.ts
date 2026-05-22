@@ -218,9 +218,30 @@ export function runCommandInDirectory(cmd: string, cwd: string | undefined, coll
 
                     // 收集诊断信息
                     if (collector) {
-                        if (/:\s*error:/i.test(processedLine) || /\berror\b/i.test(processedLine)) {
+                        const errorPatterns = [
+                            /:\s*error:/i, /\berror\b/i,
+                            /undefined\s+reference/i, /undefined\s+symbol/i,
+                            /multiple\s+definition/i,
+                            /collect2:\s*error/i,
+                            /ninja:\s*build\s+stopped/i,
+                            /fatal\s+error/i,
+                            /ld\s+returned\s+\d+\s+exit\s+status/i,
+                            /cannot\s+find\s+-l/i,
+                            /LNK\d{4}/i,
+                        ];
+                        const warningPatterns = [
+                            /:\s*warning:/i, /\bwarning\b/i,
+                            /implicit\s+declaration/i, /deprecated/i,
+                            /uninitialized/i, /incompatible\s+pointer/i,
+                            /discards\s+qualifiers/i, /unused\s+(variable|parameter|function)/i,
+                        ];
+
+                        const isError = errorPatterns.some(p => p.test(processedLine));
+                        const isWarning = !isError && warningPatterns.some(p => p.test(processedLine));
+
+                        if (isError) {
                             collector.errors.push(processedLine);
-                        } else if (/:\s*warning:/i.test(processedLine) || /\bwarning\b/i.test(processedLine)) {
+                        } else if (isWarning) {
                             collector.warnings.push(processedLine);
                         }
                     }
