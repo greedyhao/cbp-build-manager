@@ -4,6 +4,14 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.5.2] - 2026-05-22
+
+### Changed
+- 扩展诊断信息收集范围，新增识别链接错误和更多警告类型：
+  - 链接错误：`undefined reference`、`undefined symbol`、`multiple definition`、`ld returned N exit status`、`cannot find -l`、`LNK` 错误码
+  - 构建系统错误：`ninja: build stopped`、`fatal error`、`collect2: error`
+  - 更多警告：`implicit declaration`、`deprecated`、`uninitialized`、`incompatible pointer`、`unused variable/parameter/function` 等
+
 ## [1.5.1] - 2026-05-14
 
 ### Changed
