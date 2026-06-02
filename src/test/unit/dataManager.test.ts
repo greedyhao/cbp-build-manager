@@ -1,295 +1,306 @@
-import * as assert from 'assert';
-import * as vscode from 'vscode';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
-import { CbpDataManager } from '../../services';
+import * as assert from "assert";
+import * as vscode from "vscode";
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
+import { CbpDataManager } from "../../services";
 
 // Mock vscode.Memento
 class MockMemento {
-    private data: Record<string, unknown> = {};
+  private data: Record<string, unknown> = {};
 
-    get<T>(key: string, defaultValue?: T): T | undefined {
-        return (this.data[key] as T) ?? defaultValue;
-    }
+  get<T>(key: string, defaultValue?: T): T | undefined {
+    return (this.data[key] as T) ?? defaultValue;
+  }
 
-    update(key: string, value: unknown): Thenable<void> {
-        this.data[key] = value;
-        return Promise.resolve();
-    }
+  update(key: string, value: unknown): Thenable<void> {
+    this.data[key] = value;
+    return Promise.resolve();
+  }
 }
 
 function createMockContext(): vscode.ExtensionContext {
-    const mockMemento = new MockMemento();
-    return {
-        globalState: mockMemento,
-        subscriptions: [],
-        workspaceState: mockMemento,
-        extensionPath: '',
-        asAbsolutePath: (relativePath: string) => relativePath,
-    } as unknown as vscode.ExtensionContext;
+  const mockMemento = new MockMemento();
+  return {
+    globalState: mockMemento,
+    subscriptions: [],
+    workspaceState: mockMemento,
+    extensionPath: "",
+    asAbsolutePath: (relativePath: string) => relativePath,
+  } as unknown as vscode.ExtensionContext;
 }
 
 function getWorkspaceRoot(): string {
-    return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.tmpdir();
+  return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.tmpdir();
 }
 
-suite('DataManager Test Suite', () => {
-    let tempDir: string;
+suite("DataManager Test Suite", () => {
+  let tempDir: string;
 
-    setup(() => {
-        tempDir = fs.mkdtempSync(path.join(getWorkspaceRoot(), '.cbp-test-'));
-    });
+  setup(() => {
+    tempDir = fs.mkdtempSync(path.join(getWorkspaceRoot(), ".cbp-test-"));
+  });
 
-    teardown(() => {
-        if (fs.existsSync(tempDir)) {
-            fs.rmSync(tempDir, { recursive: true, force: true });
-        }
-    });
-
-    function makePath(name: string): string {
-        return path.join(tempDir, name);
+  teardown(() => {
+    if (fs.existsSync(tempDir)) {
+      fs.rmSync(tempDir, { recursive: true, force: true });
     }
+  });
 
-    // ==================== addToQueue ====================
+  function makePath(name: string): string {
+    return path.join(tempDir, name);
+  }
 
-    test('addToQueue: should add items to queue', () => {
-        const manager = new CbpDataManager();
-        const p = makePath('test.cbp');
-        manager.setAllDetectedProjects([p]);
-        manager.addToQueue([p]);
+  // ==================== addToQueue ====================
 
-        const queue = manager.getQueueItems();
-        assert.strictEqual(queue.length, 1);
-        assert.strictEqual(queue[0].fsPath, p);
-        assert.strictEqual(queue[0].label, 'test');
-    });
+  test("addToQueue: should add items to queue", () => {
+    const manager = new CbpDataManager();
+    const p = makePath("test.cbp");
+    manager.setAllDetectedProjects([p]);
+    manager.addToQueue([p]);
 
-    test('addToQueue: should not add duplicate items', () => {
-        const manager = new CbpDataManager();
-        const p = makePath('test.cbp');
-        manager.setAllDetectedProjects([p]);
-        manager.addToQueue([p]);
-        manager.addToQueue([p]);
+    const queue = manager.getQueueItems();
+    assert.strictEqual(queue.length, 1);
+    assert.strictEqual(queue[0].fsPath, p);
+    assert.strictEqual(queue[0].label, "test");
+  });
 
-        const queue = manager.getQueueItems();
-        assert.strictEqual(queue.length, 1);
-    });
+  test("addToQueue: should not add duplicate items", () => {
+    const manager = new CbpDataManager();
+    const p = makePath("test.cbp");
+    manager.setAllDetectedProjects([p]);
+    manager.addToQueue([p]);
+    manager.addToQueue([p]);
 
-    test('addToQueue: should add multiple items', () => {
-        const manager = new CbpDataManager();
-        const p1 = makePath('test1.cbp');
-        const p2 = makePath('test2.cbp');
-        manager.setAllDetectedProjects([p1, p2]);
-        manager.addToQueue([p1, p2]);
+    const queue = manager.getQueueItems();
+    assert.strictEqual(queue.length, 1);
+  });
 
-        const queue = manager.getQueueItems();
-        assert.strictEqual(queue.length, 2);
-    });
+  test("addToQueue: should add multiple items", () => {
+    const manager = new CbpDataManager();
+    const p1 = makePath("test1.cbp");
+    const p2 = makePath("test2.cbp");
+    manager.setAllDetectedProjects([p1, p2]);
+    manager.addToQueue([p1, p2]);
 
-    // ==================== removeFromQueue ====================
+    const queue = manager.getQueueItems();
+    assert.strictEqual(queue.length, 2);
+  });
 
-    test('removeFromQueue: should remove items from queue', () => {
-        const manager = new CbpDataManager();
-        const p = makePath('test.cbp');
-        manager.setAllDetectedProjects([p]);
-        manager.addToQueue([p]);
+  // ==================== removeFromQueue ====================
 
-        const queueItem = manager.getQueueItems()[0];
-        manager.removeFromQueue([queueItem]);
+  test("removeFromQueue: should remove items from queue", () => {
+    const manager = new CbpDataManager();
+    const p = makePath("test.cbp");
+    manager.setAllDetectedProjects([p]);
+    manager.addToQueue([p]);
 
-        const queue = manager.getQueueItems();
-        assert.strictEqual(queue.length, 0);
-    });
+    const queueItem = manager.getQueueItems()[0];
+    manager.removeFromQueue([queueItem]);
 
-    test('removeFromQueue: should only remove specified items', () => {
-        const manager = new CbpDataManager();
-        const p1 = makePath('test1.cbp');
-        const p2 = makePath('test2.cbp');
-        manager.setAllDetectedProjects([p1, p2]);
-        manager.addToQueue([p1, p2]);
+    const queue = manager.getQueueItems();
+    assert.strictEqual(queue.length, 0);
+  });
 
-        const queueItems = manager.getQueueItems();
-        manager.removeFromQueue([queueItems[0]]);
+  test("removeFromQueue: should only remove specified items", () => {
+    const manager = new CbpDataManager();
+    const p1 = makePath("test1.cbp");
+    const p2 = makePath("test2.cbp");
+    manager.setAllDetectedProjects([p1, p2]);
+    manager.addToQueue([p1, p2]);
 
-        const queue = manager.getQueueItems();
-        assert.strictEqual(queue.length, 1);
-        assert.strictEqual(queue[0].fsPath, p2);
-    });
+    const queueItems = manager.getQueueItems();
+    manager.removeFromQueue([queueItems[0]]);
 
-    // ==================== moveQueueItem ====================
+    const queue = manager.getQueueItems();
+    assert.strictEqual(queue.length, 1);
+    assert.strictEqual(queue[0].fsPath, p2);
+  });
 
-    test('moveQueueItem: should reorder queue items', () => {
-        const manager = new CbpDataManager();
-        const p1 = makePath('test1.cbp');
-        const p2 = makePath('test2.cbp');
-        const p3 = makePath('test3.cbp');
-        manager.setAllDetectedProjects([p1, p2, p3]);
-        manager.addToQueue([p1, p2, p3]);
+  // ==================== moveQueueItem ====================
 
-        const queueItems = manager.getQueueItems();
-        // Move test1 to end (no target = append)
-        manager.moveQueueItem([queueItems[0]], undefined);
+  test("moveQueueItem: should reorder queue items", () => {
+    const manager = new CbpDataManager();
+    const p1 = makePath("test1.cbp");
+    const p2 = makePath("test2.cbp");
+    const p3 = makePath("test3.cbp");
+    manager.setAllDetectedProjects([p1, p2, p3]);
+    manager.addToQueue([p1, p2, p3]);
 
-        const newQueue = manager.getQueueItems();
-        assert.strictEqual(newQueue[0].fsPath, p2);
-        assert.strictEqual(newQueue[1].fsPath, p3);
-        assert.strictEqual(newQueue[2].fsPath, p1);
-    });
+    const queueItems = manager.getQueueItems();
+    // Move test1 to end (no target = append)
+    manager.moveQueueItem([queueItems[0]], undefined);
 
-    test('moveQueueItem: should move items to end when target is undefined', () => {
-        const manager = new CbpDataManager();
-        const p1 = makePath('test1.cbp');
-        const p2 = makePath('test2.cbp');
-        const p3 = makePath('test3.cbp');
-        manager.setAllDetectedProjects([p1, p2, p3]);
-        manager.addToQueue([p1, p2, p3]);
+    const newQueue = manager.getQueueItems();
+    assert.strictEqual(newQueue[0].fsPath, p2);
+    assert.strictEqual(newQueue[1].fsPath, p3);
+    assert.strictEqual(newQueue[2].fsPath, p1);
+  });
 
-        const queueItems = manager.getQueueItems();
-        manager.moveQueueItem([queueItems[0]], undefined);
+  test("moveQueueItem: should move items to end when target is undefined", () => {
+    const manager = new CbpDataManager();
+    const p1 = makePath("test1.cbp");
+    const p2 = makePath("test2.cbp");
+    const p3 = makePath("test3.cbp");
+    manager.setAllDetectedProjects([p1, p2, p3]);
+    manager.addToQueue([p1, p2, p3]);
 
-        const newQueue = manager.getQueueItems();
-        assert.strictEqual(newQueue.length, 3);
-        assert.strictEqual(newQueue[0].fsPath, p2);
-        assert.strictEqual(newQueue[1].fsPath, p3);
-        assert.strictEqual(newQueue[2].fsPath, p1);
-    });
+    const queueItems = manager.getQueueItems();
+    manager.moveQueueItem([queueItems[0]], undefined);
 
-    test('moveQueueItem: should move multiple items to end when target is undefined', () => {
-        const manager = new CbpDataManager();
-        const p1 = makePath('test1.cbp');
-        const p2 = makePath('test2.cbp');
-        const p3 = makePath('test3.cbp');
-        const p4 = makePath('test4.cbp');
-        manager.setAllDetectedProjects([p1, p2, p3, p4]);
-        manager.addToQueue([p1, p2, p3, p4]);
+    const newQueue = manager.getQueueItems();
+    assert.strictEqual(newQueue.length, 3);
+    assert.strictEqual(newQueue[0].fsPath, p2);
+    assert.strictEqual(newQueue[1].fsPath, p3);
+    assert.strictEqual(newQueue[2].fsPath, p1);
+  });
 
-        const queueItems = manager.getQueueItems();
-        manager.moveQueueItem([queueItems[0], queueItems[1]], undefined);
+  test("moveQueueItem: should move multiple items to end when target is undefined", () => {
+    const manager = new CbpDataManager();
+    const p1 = makePath("test1.cbp");
+    const p2 = makePath("test2.cbp");
+    const p3 = makePath("test3.cbp");
+    const p4 = makePath("test4.cbp");
+    manager.setAllDetectedProjects([p1, p2, p3, p4]);
+    manager.addToQueue([p1, p2, p3, p4]);
 
-        const newQueue = manager.getQueueItems();
-        assert.strictEqual(newQueue.length, 4);
-        assert.strictEqual(newQueue[0].fsPath, p3);
-        assert.strictEqual(newQueue[1].fsPath, p4);
-        assert.strictEqual(newQueue[2].fsPath, p1);
-        assert.strictEqual(newQueue[3].fsPath, p2);
-    });
+    const queueItems = manager.getQueueItems();
+    manager.moveQueueItem([queueItems[0], queueItems[1]], undefined);
 
-    // ==================== getAvailableItems ====================
+    const newQueue = manager.getQueueItems();
+    assert.strictEqual(newQueue.length, 4);
+    assert.strictEqual(newQueue[0].fsPath, p3);
+    assert.strictEqual(newQueue[1].fsPath, p4);
+    assert.strictEqual(newQueue[2].fsPath, p1);
+    assert.strictEqual(newQueue[3].fsPath, p2);
+  });
 
-    test('getAvailableItems: should return items not in queue', () => {
-        const manager = new CbpDataManager();
-        const p1 = makePath('test1.cbp');
-        const p2 = makePath('test2.cbp');
-        const p3 = makePath('test3.cbp');
-        manager.setAllDetectedProjects([p1, p2, p3]);
-        manager.addToQueue([p1]);
+  // ==================== getAvailableItems ====================
 
-        const available = manager.getAvailableItems();
-        assert.strictEqual(available.length, 2);
-        assert.ok(available.includes(p2));
-        assert.ok(available.includes(p3));
-        assert.ok(!available.includes(p1));
-    });
+  test("getAvailableItems: should return items not in queue", () => {
+    const manager = new CbpDataManager();
+    const p1 = makePath("test1.cbp");
+    const p2 = makePath("test2.cbp");
+    const p3 = makePath("test3.cbp");
+    manager.setAllDetectedProjects([p1, p2, p3]);
+    manager.addToQueue([p1]);
 
-    test('getAvailableItems: should return all when queue is empty', () => {
-        const manager = new CbpDataManager();
-        const p1 = makePath('test1.cbp');
-        const p2 = makePath('test2.cbp');
-        manager.setAllDetectedProjects([p1, p2]);
+    const available = manager.getAvailableItems();
+    assert.strictEqual(available.length, 2);
+    assert.ok(available.includes(p2));
+    assert.ok(available.includes(p3));
+    assert.ok(!available.includes(p1));
+  });
 
-        const available = manager.getAvailableItems();
-        assert.strictEqual(available.length, 2);
-    });
+  test("getAvailableItems: should return all when queue is empty", () => {
+    const manager = new CbpDataManager();
+    const p1 = makePath("test1.cbp");
+    const p2 = makePath("test2.cbp");
+    manager.setAllDetectedProjects([p1, p2]);
 
-    // ==================== updateCheckState ====================
+    const available = manager.getAvailableItems();
+    assert.strictEqual(available.length, 2);
+  });
 
-    test('updateCheckState: should update checkbox state', () => {
-        const manager = new CbpDataManager();
-        const p = makePath('test.cbp');
-        manager.setAllDetectedProjects([p]);
-        manager.addToQueue([p]);
+  // ==================== updateCheckState ====================
 
-        const queueItem = manager.getQueueItems()[0];
-        manager.updateCheckState(queueItem, vscode.TreeItemCheckboxState.Unchecked);
+  test("updateCheckState: should update checkbox state", () => {
+    const manager = new CbpDataManager();
+    const p = makePath("test.cbp");
+    manager.setAllDetectedProjects([p]);
+    manager.addToQueue([p]);
 
-        assert.strictEqual(queueItem.checkboxState, vscode.TreeItemCheckboxState.Unchecked);
-        assert.strictEqual(queueItem.isChecked, false);
-    });
+    const queueItem = manager.getQueueItems()[0];
+    manager.updateCheckState(queueItem, vscode.TreeItemCheckboxState.Unchecked);
 
-    // ==================== persistence ====================
+    assert.strictEqual(
+      queueItem.checkboxState,
+      vscode.TreeItemCheckboxState.Unchecked,
+    );
+    assert.strictEqual(queueItem.isChecked, false);
+  });
 
-    test('should persist queue order to file', () => {
-        const manager = new CbpDataManager();
-        const stateFile = path.join(tempDir, '.cbp-build', 'queue.json');
-        manager.setStateFilePath(stateFile);
+  // ==================== persistence ====================
 
-        const p1 = makePath('test1.cbp');
-        const p2 = makePath('test2.cbp');
-        manager.setAllDetectedProjects([p1, p2]);
-        manager.addToQueue([p1, p2]);
+  test("should persist queue order to file", () => {
+    const manager = new CbpDataManager();
+    const stateFile = path.join(tempDir, ".cbp-build", "queue.json");
+    manager.setStateFilePath(stateFile);
 
-        // Reorder: move p1 to end
-        const queueItems = manager.getQueueItems();
-        manager.moveQueueItem([queueItems[0]], undefined);
+    const p1 = makePath("test1.cbp");
+    const p2 = makePath("test2.cbp");
+    manager.setAllDetectedProjects([p1, p2]);
+    manager.addToQueue([p1, p2]);
 
-        // Verify file was created
-        assert.ok(fs.existsSync(stateFile));
+    // Reorder: move p1 to end
+    const queueItems = manager.getQueueItems();
+    manager.moveQueueItem([queueItems[0]], undefined);
 
-        // Verify file content
-        const savedState = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
-        assert.strictEqual(savedState.queuePaths.length, 2);
-        assert.strictEqual(savedState.queuePaths[0], p2);
-    });
+    // Verify file was created
+    assert.ok(fs.existsSync(stateFile));
 
-    test('should load state from file', () => {
-        // Create state file with pre-existing data
-        const stateDir = path.join(tempDir, '.cbp-build');
-        fs.mkdirSync(stateDir, { recursive: true });
-        const stateFile = path.join(stateDir, 'queue.json');
+    // Verify file content
+    const savedState = JSON.parse(fs.readFileSync(stateFile, "utf-8"));
+    assert.strictEqual(savedState.queuePaths.length, 2);
+    assert.strictEqual(savedState.queuePaths[0], p2);
+  });
 
-        // Create a .cbp file in temp dir so it passes existsSync check
-        const projectPath = makePath('project.cbp');
-        fs.writeFileSync(projectPath, '');
-        fs.writeFileSync(stateFile, JSON.stringify({
-            queuePaths: [projectPath],
-            checkState: { [projectPath]: false }
-        }), 'utf-8');
+  test("should load state from file", () => {
+    // Create state file with pre-existing data
+    const stateDir = path.join(tempDir, ".cbp-build");
+    fs.mkdirSync(stateDir, { recursive: true });
+    const stateFile = path.join(stateDir, "queue.json");
 
-        // Create new manager to test loading
-        const manager2 = new CbpDataManager();
-        manager2.setStateFilePath(stateFile);
-        manager2.reloadState();
+    // Create a .cbp file in temp dir so it passes existsSync check
+    const projectPath = makePath("project.cbp");
+    fs.writeFileSync(projectPath, "");
+    fs.writeFileSync(
+      stateFile,
+      JSON.stringify({
+        queuePaths: [projectPath],
+        checkState: { [projectPath]: false },
+      }),
+      "utf-8",
+    );
 
-        const queue = manager2.getQueueItems();
-        assert.strictEqual(queue.length, 1);
-        assert.strictEqual(queue[0].fsPath, projectPath);
-    });
+    // Create new manager to test loading
+    const manager2 = new CbpDataManager();
+    manager2.setStateFilePath(stateFile);
+    manager2.reloadState();
 
-    test('loadState: should filter out non-existent projects', () => {
-        // Create state file with a non-existent project
-        const stateDir = path.join(tempDir, '.cbp-build');
-        fs.mkdirSync(stateDir, { recursive: true });
-        const stateFile = path.join(stateDir, 'queue.json');
+    const queue = manager2.getQueueItems();
+    assert.strictEqual(queue.length, 1);
+    assert.strictEqual(queue[0].fsPath, projectPath);
+  });
 
-        // Create an existing .cbp file
-        const existingPath = makePath('existing.cbp');
-        fs.writeFileSync(existingPath, '');
+  test("loadState: should filter out non-existent projects", () => {
+    // Create state file with a non-existent project
+    const stateDir = path.join(tempDir, ".cbp-build");
+    fs.mkdirSync(stateDir, { recursive: true });
+    const stateFile = path.join(stateDir, "queue.json");
 
-        // Create state with one existing and one non-existent file
-        fs.writeFileSync(stateFile, JSON.stringify({
-            queuePaths: [existingPath, makePath('nonexistent.cbp')],
-            checkState: {}
-        }), 'utf-8');
+    // Create an existing .cbp file
+    const existingPath = makePath("existing.cbp");
+    fs.writeFileSync(existingPath, "");
 
-        // Create new manager to test loading
-        const manager2 = new CbpDataManager();
-        manager2.setStateFilePath(stateFile);
-        manager2.reloadState();
+    // Create state with one existing and one non-existent file
+    fs.writeFileSync(
+      stateFile,
+      JSON.stringify({
+        queuePaths: [existingPath, makePath("nonexistent.cbp")],
+        checkState: {},
+      }),
+      "utf-8",
+    );
 
-        const queue = manager2.getQueueItems();
-        // Should only have the existing file
-        assert.strictEqual(queue.length, 1);
-        assert.strictEqual(queue[0].fsPath, existingPath);
-    });
+    // Create new manager to test loading
+    const manager2 = new CbpDataManager();
+    manager2.setStateFilePath(stateFile);
+    manager2.reloadState();
+
+    const queue = manager2.getQueueItems();
+    // Should only have the existing file
+    assert.strictEqual(queue.length, 1);
+    assert.strictEqual(queue[0].fsPath, existingPath);
+  });
 });
