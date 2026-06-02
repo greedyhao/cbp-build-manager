@@ -20,6 +20,7 @@
 - **compile_commands.json 合并**：手动勾选编译数据库中的文件，通过 cbp2clangd 合并优化 clangd 跨工程索引；或在构建/重新编译完成后自动合并
 - **编译时停止功能**：编译过程中可随时点击停止按钮中断编译
 - **编译诊断汇总**：构建完成后自动提取并汇总显示所有警告和错误
+- **工具链配置**：支持生成和应用 Code::Blocks 工具链配置模板（YAML 格式），方便切换和管理编译器
 
 ## 使用指南
 
@@ -89,6 +90,36 @@
 点击 **清理** 按钮（🗑️）开始按指定顺序清理**构建队列**中勾选的项目：
 - 仅运行 `ninja -t clean` 清理构建文件
 - 不执行后续的构建流程
+
+### 8. 工具链配置
+
+支持通过 YAML 配置文件管理 Code::Blocks 的编译器工具链。
+
+#### 生成配置模板
+
+1. 打开命令面板（`Ctrl+Shift+P`）
+2. 输入并选择 **CBP: 生成工具链配置模板**
+3. 选择保存路径，生成模板文件 `cbp-toolchain-config.yaml`
+4. 按实际编译器路径修改模板内容
+
+配置模板示例：
+```yaml
+compilers:
+  - name: "RISCV32-V4"
+    master_path: "C:\\toolchain\\v4"
+    c_compiler: "riscv32-elf-gcc.exe"
+    cpp_compiler: "riscv32-elf-g++.exe"
+    linker: "riscv32-elf-ld.exe"
+    lib_linker: "riscv32-elf-ar.exe"
+    parent: "gcc"
+```
+
+#### 应用配置
+
+1. 打开命令面板（`Ctrl+Shift+P`）
+2. 输入并选择 **CBP: 应用工具链配置 (apply-config)**
+3. 选择 YAML 配置文件
+4. 配置将自动写入 Code::Blocks 的 `default.conf`
 
 ## 配置选项
 

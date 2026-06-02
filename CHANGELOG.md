@@ -4,6 +4,18 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.6.0] - 2026-06-02
+
+### Added
+- 新增 `generateToolchainConfig` 命令：生成 Code::Blocks 工具链配置模板（YAML 格式），用于配置编译器路径
+- 新增 `applyToolchainConfig` 命令：应用工具链 YAML 配置到 Code::Blocks 的 default.conf（需 cbp2clangd 支持）
+- 添加 `.prettierrc` 配置文件，统一代码格式
+
+### Fixed
+- 修复所有自定义命令未在命令面板（Ctrl+Shift+P）中显示的问题
+  - 移除 `activationEvents: []`，使 VS Code 能正确注册命令
+  - 所有命令添加 `category: "CBP"` 分类标识，确保面板可见
+
 ## [1.5.2] - 2026-05-22
 
 ### Changed
