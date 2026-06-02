@@ -10,7 +10,6 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
   "repository": {
     "type": "git",
     "url": "https://github.com/greedyhao/cbp-build-manager.git"
@@ -21,56 +20,77 @@
       {
         "command": "cbp-build-manager.buildSelected",
         "title": "构建所选项目",
+        "category": "CBP",
         "icon": "$(play)"
       },
       {
         "command": "cbp-build-manager.refreshProjects",
         "title": "刷新项目",
+        "category": "CBP",
         "icon": "$(refresh)"
       },
       {
         "command": "cbp-build-manager.addToBuild",
         "title": "添加到编译列表",
+        "category": "CBP",
         "icon": "$(add)"
       },
       {
         "command": "cbp-build-manager.removeFromBuild",
         "title": "从编译列表移除",
+        "category": "CBP",
         "icon": "$(remove)"
       },
       {
         "command": "cbp-build-manager.deleteKeyAction",
-        "title": "删除选中项目"
+        "title": "删除选中项目",
+        "category": "CBP"
       },
       {
         "command": "cbp-build-manager.rebuildSelected",
         "title": "重新编译所选项目",
+        "category": "CBP",
         "icon": "$(sync)"
       },
       {
         "command": "cbp-build-manager.cleanSelected",
         "title": "清理所选项目",
+        "category": "CBP",
         "icon": "$(trash)"
       },
       {
         "command": "cbp-build-manager.stopBuild",
         "title": "停止编译",
+        "category": "CBP",
         "icon": "$(debug-stop)"
       },
       {
         "command": "cbp-build-manager.filterByChip",
         "title": "按芯片系列筛选",
+        "category": "CBP",
         "icon": "$(filter)"
       },
       {
         "command": "cbp-build-manager.mergeCompileCommands",
         "title": "合并编译数据库",
+        "category": "CBP",
         "icon": "$(merge)"
       },
       {
         "command": "cbp-build-manager.refreshCompileCommands",
         "title": "刷新编译数据库",
+        "category": "CBP",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "cbp-build-manager.generateToolchainConfig",
+        "title": "生成工具链配置模板",
+        "category": "CBP"
+      },
+      {
+        "command": "cbp-build-manager.applyToolchainConfig",
+        "title": "应用工具链配置 (apply-config)",
+        "category": "CBP"
       }
     ],
     "viewsContainers": {
@@ -198,7 +218,7 @@
           "default": true,
           "description": "禁止 clangd 在补全代码时插入头文件（需要 clangd v21 以上版本，否则 .clangd 文件会出现 lint 错误：Unknown Completion key 'HeaderInsertion'）"
         },
-"cbpBuildManager.debug": {
+        "cbpBuildManager.debug": {
           "type": "boolean",
           "default": false,
           "description": "启用调试模式，显示详细的调试信息，并在 cbp2clangd 命令中添加 --debug 参数"
