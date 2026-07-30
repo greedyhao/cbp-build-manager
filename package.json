@@ -42,8 +42,13 @@
         "icon": "$(remove)"
       },
       {
-        "command": "cbp-build-manager.deleteKeyAction",
-        "title": "删除选中项目",
+        "command": "cbp-build-manager.selectTarget",
+        "title": "选择当前 Target...",
+        "category": "CBP"
+      },
+      {
+        "command": "cbp-build-manager.toggleBuildAllTargets",
+        "title": "切换构建全部 Target",
         "category": "CBP"
       },
       {
@@ -176,18 +181,28 @@
       ],
       "view/item/context": [
         {
+          "command": "cbp-build-manager.selectTarget",
+          "group": "inline@1",
+          "when": "view == cbpBuildQueue && viewItem == cbpProject"
+        },
+        {
+          "command": "cbp-build-manager.toggleBuildAllTargets",
+          "group": "inline@2",
+          "when": "view == cbpBuildQueue && viewItem == cbpProject"
+        },
+        {
           "command": "cbp-build-manager.removeFromBuild",
           "group": "inline",
           "when": "view == cbpBuildQueue && viewItem == cbpProject"
         }
       ]
     },
-    "keybindings": [
+    "customEditors": [
       {
-        "command": "cbp-build-manager.deleteKeyAction",
-        "key": "delete",
-        "mac": "cmd+backspace",
-        "when": "view == cbpBuildQueue && listFocus"
+        "viewType": "cbp-build-manager.cbpEditor",
+        "displayName": "CBP 图形编辑器",
+        "selector": [{ "filenamePattern": "*.cbp" }],
+        "priority": "default"
       }
     ],
     "configuration": {
@@ -200,8 +215,8 @@
         },
         "cbpBuildManager.convertCommand": {
           "type": "string",
-          "default": "{cbp2clang} {cbpFile} {compileCommands} -l ld",
-          "description": "转换 CBP 到 compile_commands.json 的命令模板。变量：{cbp2clang}, {cbpFile}, {compileCommands}"
+          "default": "{cbp2clang} {cbpFile} {compileCommands} {target} -l ld",
+          "description": "转换 CBP 到 compile_commands.json 的命令模板。变量：{cbp2clang}, {cbpFile}, {compileCommands}, {target}。其中 {target} 会展开为 --target <名称>；若模板未包含 {target}，扩展会自动追加 --target 参数"
         },
         "cbpBuildManager.buildCommand": {
           "type": "string",
@@ -264,5 +279,6 @@
     "npm-run-all": "^4.1.5",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.48.1"
-  }
+  },
+  "packageManager": "pnpm@11.18.0+sha512.33d83c77da82f49fba836925c6f1b841181ec3132b670639bd012f7075f5c7cf634c5f870147c19aae7478fac01df09d8892e880454896edd23ee9b33757563c"
 }

@@ -10,10 +10,16 @@ export class CbpProjectItem extends vscode.TreeItem {
     public readonly collapsibleState: vscode.TreeItemCollapsibleState = vscode
       .TreeItemCollapsibleState.None,
     public readonly showCheckbox: boolean = true,
+    public readonly targetLabel?: string,
   ) {
     super(label, collapsibleState);
-    this.tooltip = `${this.label}\n${this.fsPath}`;
+    this.tooltip = `${this.label}\n${this.fsPath}${
+      targetLabel ? `\nTarget: ${targetLabel}` : ""
+    }`;
     this.description = path.basename(path.dirname(this.fsPath));
+    if (targetLabel) {
+      this.description += ` · ${targetLabel}`;
+    }
     this.contextValue = "cbpProject";
     this.resourceUri = vscode.Uri.file(fsPath);
     this.command = {

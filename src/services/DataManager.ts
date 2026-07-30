@@ -3,11 +3,13 @@ import * as path from "path";
 import * as fs from "fs";
 import { CbpProjectItem } from "../models/items";
 import { CompileCommandsItem } from "../models/CompileCommandsItem";
+import { CbpProjectService } from "./CbpProjectService";
 
 // --- 数据管理器 (核心逻辑) ---
 
 export class CbpDataManager {
   // 上方：有序的构建队列
+  private readonly projectService = new CbpProjectService();
   private buildQueue: CbpProjectItem[] = [];
   // 下方：所有的项目缓存 (用于计算差异)
   private allDetectedProjects: string[] = []; // 存 fsPath
@@ -16,6 +18,10 @@ export class CbpDataManager {
   private compileCommandsItems: CompileCommandsItem[] = [];
   private compileCommandsCheckState: Record<string, boolean> = {};
   private compileCommandsOrder: string[] = [];
+
+  // 每个工程的当前 target 和构建模式
+  private targetSelections: Record<string, string> = {};
+  private buildAllTargets: Record<string, boolean> = {};
 
   // 芯片系列筛选
   private chipFilter: string | null = null; // null 表示显示全部
@@ -72,12 +78,14 @@ export class CbpDataManager {
           }
           const name = path.basename(fsPath, ".cbp");
           const isChecked = savedCheckState[fsPath] ?? true;
+          const targetLabel = this.getTargetLabel(fsPath);
           return new CbpProjectItem(
             name,
             fsPath,
             isChecked,
             vscode.TreeItemCollapsibleState.None,
             true,
+            targetLabel,
           );
         })
         .filter((item): item is CbpProjectItem => item !== null);
@@ -85,6 +93,15 @@ export class CbpDataManager {
       // 加载编译数据库勾选状态和顺序
       this.compileCommandsCheckState = state.compileCommandsCheckState || {};
       this.compileCommandsOrder = state.compileCommandsOrder || [];
+
+      this.targetSelections = state.targetSelections || {};
+      this.buildAllTargets = state.buildAllTargets || {};
+      for (const fsPath of Object.keys(this.targetSelections)) {
+        const targets = this.getTargetNames(fsPath);
+        if (targets.length > 0 && !targets.includes(this.targetSelections[fsPath])) {
+          this.targetSelections[fsPath] = targets[0];
+        }
+      }
 
       // 加载芯片筛选状态
       this.chipFilter = state.chipFilter ?? null;
@@ -121,6 +138,8 @@ export class CbpDataManager {
         chipFilter: this.chipFilter,
         compileCommandsCheckState: this.compileCommandsCheckState,
         compileCommandsOrder: this.compileCommandsOrder,
+        targetSelections: this.targetSelections,
+        buildAllTargets: this.buildAllTargets,
       };
 
       fs.writeFileSync(
@@ -306,6 +325,7 @@ export class CbpDataManager {
           true,
           vscode.TreeItemCollapsibleState.None,
           true,
+          this.getTargetLabel(fsPath),
         );
         this.buildQueue.push(item);
         changed = true;
@@ -361,6 +381,79 @@ export class CbpDataManager {
     item.checkboxState = state;
     item.isChecked = state === vscode.TreeItemCheckboxState.Checked;
     this.saveState();
+  }
+
+  getTargetSelection(fsPath: string): string | undefined {
+    return this.targetSelections[fsPath];
+  }
+
+  setTargetSelection(fsPath: string, target: string): void {
+    this.targetSelections[fsPath] = target;
+    this.buildQueue = this.buildQueue.map((item) =>
+      item.fsPath === fsPath ? this.refreshQueueItem(item) : item,
+    );
+    this.saveState();
+    this._onDidChangeTreeData.fire();
+  }
+
+  getBuildAllTargets(fsPath: string): boolean {
+    return this.buildAllTargets[fsPath] ?? false;
+  }
+
+  setBuildAllTargets(fsPath: string, enabled: boolean): void {
+    this.buildAllTargets[fsPath] = enabled;
+    this.buildQueue = this.buildQueue.map((item) =>
+      item.fsPath === fsPath ? this.refreshQueueItem(item) : item,
+    );
+    this.saveState();
+    this._onDidChangeTreeData.fire();
+  }
+
+  private getTargetLabel(fsPath: string): string | undefined {
+    try {
+      const metadata = this.projectService.read(fsPath);
+      if (metadata.targets.length === 0) {
+        return undefined;
+      }
+      const selected = this.targetSelections[fsPath];
+      const target = selected && metadata.targets.includes(selected)
+        ? selected
+        : metadata.targets[0];
+      this.targetSelections[fsPath] = target;
+      return this.buildAllTargets[fsPath]
+        ? `全部 Target (${metadata.targets.length})`
+        : target;
+    } catch {
+      return "Target 解析失败";
+    }
+  }
+
+  private refreshQueueItem(item: CbpProjectItem): CbpProjectItem {
+    return new CbpProjectItem(
+      item.label as string,
+      item.fsPath,
+      item.isChecked,
+      vscode.TreeItemCollapsibleState.None,
+      true,
+      this.getTargetLabel(item.fsPath),
+    );
+  }
+
+  getTargetNames(fsPath: string): string[] {
+    try {
+      return this.projectService.read(fsPath).targets;
+    } catch {
+      return [];
+    }
+  }
+
+  getBuildTargets(fsPath: string): string[] {
+    const targets = this.getTargetNames(fsPath);
+    if (this.getBuildAllTargets(fsPath)) {
+      return targets;
+    }
+    const selected = this.getTargetSelection(fsPath) || targets[0];
+    return selected ? [selected] : [];
   }
 
   // 获取所有检测到的项目

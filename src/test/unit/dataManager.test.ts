@@ -303,4 +303,56 @@ suite("DataManager Test Suite", () => {
     assert.strictEqual(queue.length, 1);
     assert.strictEqual(queue[0].fsPath, existingPath);
   });
+
+  // ==================== target selection ====================
+
+  test("targetSelection: persists and falls back to first target when invalid", () => {
+    const stateFile = path.join(tempDir, ".cbp-build", "queue.json");
+    const cbpFile = makePath("multi.cbp");
+    fs.writeFileSync(
+      cbpFile,
+      `<?xml version="1.0"?>\n<CodeBlocks_project_file><Project><Option title="multi"/><Build>
+<Target title="Debug"><Option output="a.a"/></Target>
+<Target title="Release"><Option output="b.a"/></Target>
+</Build><Unit filename="main.c"/></Project></CodeBlocks_project_file>`,
+      "utf-8",
+    );
+
+    const manager = new CbpDataManager();
+    manager.setStateFilePath(stateFile);
+    manager.reloadState();
+    manager.setAllDetectedProjects([cbpFile]);
+    manager.addToQueue([cbpFile]);
+
+    // 默认选择第一个 Target
+    assert.strictEqual(manager.getTargetSelection(cbpFile), "Debug");
+    manager.setTargetSelection(cbpFile, "Release");
+    assert.strictEqual(manager.getTargetSelection(cbpFile), "Release");
+    assert.strictEqual(manager.getBuildTargets(cbpFile).length, 1);
+    assert.strictEqual(manager.getBuildTargets(cbpFile)[0], "Release");
+
+    // 全部 Target 模式
+    manager.setBuildAllTargets(cbpFile, true);
+    assert.deepStrictEqual(manager.getBuildTargets(cbpFile), ["Debug", "Release"]);
+
+    // 持久化后重载
+    const manager2 = new CbpDataManager();
+    manager2.setStateFilePath(stateFile);
+    manager2.reloadState();
+    assert.strictEqual(manager2.getTargetSelection(cbpFile), "Release");
+    assert.strictEqual(manager2.getBuildAllTargets(cbpFile), true);
+
+    // 失效 Target 应回退到第一个
+    fs.writeFileSync(
+      cbpFile,
+      `<?xml version="1.0"?>\n<CodeBlocks_project_file><Project><Option title="multi"/><Build>
+<Target title="NewOnly"><Option output="c.a"/></Target>
+</Build><Unit filename="main.c"/></Project></CodeBlocks_project_file>`,
+      "utf-8",
+    );
+    const manager3 = new CbpDataManager();
+    manager3.setStateFilePath(stateFile);
+    manager3.reloadState();
+    assert.strictEqual(manager3.getTargetSelection(cbpFile), "NewOnly");
+  });
 });
