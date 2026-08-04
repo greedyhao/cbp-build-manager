@@ -344,47 +344,6 @@ export function activate(context: vscode.ExtensionContext) {
     ),
   );
 
-  // 选择当前 Target
-  context.subscriptions.push(
-    vscode.commands.registerCommand(
-      "cbp-build-manager.selectTarget",
-      async (item?: any) => {
-        const project = item as { fsPath?: string } | undefined;
-        const fsPath = project?.fsPath || manager.getQueueItems()[0]?.fsPath;
-        if (!fsPath) {
-          return;
-        }
-        const targets = manager.getTargetNames(fsPath);
-        if (!targets.length) {
-          vscode.window.showErrorMessage("未找到可用的 CBP Target");
-          return;
-        }
-        const current = manager.getTargetSelection(fsPath) || targets[0];
-        const selected = await vscode.window.showQuickPick(
-          targets.map((target) => ({ label: target, description: target === current ? "当前 Target" : "" })),
-          { placeHolder: "选择当前 Target" },
-        );
-        if (selected) {
-          manager.setTargetSelection(fsPath, selected.label);
-        }
-      },
-    ),
-  );
-
-  // 切换构建全部 Target
-  context.subscriptions.push(
-    vscode.commands.registerCommand(
-      "cbp-build-manager.toggleBuildAllTargets",
-      (item?: any) => {
-        const project = item as { fsPath?: string } | undefined;
-        const fsPath = project?.fsPath || manager.getQueueItems()[0]?.fsPath;
-        if (fsPath) {
-          manager.setBuildAllTargets(fsPath, !manager.getBuildAllTargets(fsPath));
-        }
-      },
-    ),
-  );
-
   // 2. 添加到构建列表 (从下方 + 号)
   context.subscriptions.push(
     vscode.commands.registerCommand("cbp-build-manager.addToBuild", () => {
