@@ -3,7 +3,7 @@
   "publisher": "ZhuHao",
   "displayName": "CBP 构建管理器",
   "description": "用于管理和构建 Code::Blocks 项目的 VS Code 扩展",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "engines": {
     "vscode": "^1.79.0"
   },
@@ -40,16 +40,6 @@
         "title": "从编译列表移除",
         "category": "CBP",
         "icon": "$(remove)"
-      },
-      {
-        "command": "cbp-build-manager.selectTarget",
-        "title": "选择当前 Target...",
-        "category": "CBP"
-      },
-      {
-        "command": "cbp-build-manager.toggleBuildAllTargets",
-        "title": "切换构建全部 Target",
-        "category": "CBP"
       },
       {
         "command": "cbp-build-manager.rebuildSelected",
@@ -180,16 +170,6 @@
         }
       ],
       "view/item/context": [
-        {
-          "command": "cbp-build-manager.selectTarget",
-          "group": "inline@1",
-          "when": "view == cbpBuildQueue && viewItem == cbpProject"
-        },
-        {
-          "command": "cbp-build-manager.toggleBuildAllTargets",
-          "group": "inline@2",
-          "when": "view == cbpBuildQueue && viewItem == cbpProject"
-        },
         {
           "command": "cbp-build-manager.removeFromBuild",
           "group": "inline",
