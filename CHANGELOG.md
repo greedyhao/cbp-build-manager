@@ -4,6 +4,22 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.7.0] - 2026-08-04
+
+### Added
+- 新增 CBP 图形化编辑器，`.cbp` 默认使用 Custom Text Editor 打开，并可切换回文本编辑器
+- 图形编辑器支持查看、添加和移出工程 Unit 文件；移出工程不会删除磁盘文件
+- 图形编辑器支持切换当前 Target，以及启用/关闭“构建全部 Target”
+- 构建队列项目行显示当前 Target 或“全部 Target (N)”状态
+- Target 状态持久化到 `.cbp-build/queue.json`，无效 Target 自动回退到第一个 Target
+- 新增统一 BuildService，按工程和 Target 顺序执行 build/rebuild/clean
+
+### Changed
+- 构建、重新编译和清理均按当前 Target 或全部 Target 模式执行
+- 转换命令支持 `{target}` 占位符，展开为 `--target <name>`；旧模板自动追加该参数
+- 全部 Target 模式按 CBP XML 中的 Target 顺序逐个执行，并在结束后恢复当前 Target 的生成文件
+- cbp2clangd 最低要求版本提升至 1.6.0
+
 ## [1.6.0] - 2026-06-02
 
 ### Added

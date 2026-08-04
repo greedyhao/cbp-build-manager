@@ -1,22 +1,22 @@
 # CBP 构建管理器
 
-一个用于管理和构建 Code::Blocks 项目（.cbp 文件）的 VS Code 扩展，使用 [cbp2clang](https://github.com/greedyhao/cbp2clangd) 和自定义构建脚本。
+一个用于管理和构建 Code::Blocks 项目（.cbp 文件）的 VS Code 扩展，使用 [cbp2clangd](https://github.com/greedyhao/cbp2clangd) 和自定义构建脚本。`.cbp` 文件默认使用内置图形化编辑器打开，也可以从编辑器顶部切换回纯文本编辑。
 
 ## 功能特性
 
 - **项目扫描**：自动查找工作区中的所有 `.cbp` `compile_commands.json` 文件
 - **多视图管理**：
-  - **构建队列**：显示已选择的项目，支持拖放排序和复选框选择，点击打开 CBP 文件
-  - **编译数据库**：自动扫描工作区中所有 `compile_commands.json`，支持拖拽排序、勾选合并，点击打开 json
+  - **构建队列**：显示已选择的项目，支持拖放排序和复选框选择；项目行显示当前 Target 或“全部 Target (N)”状态，点击进入 CBP 图形化编辑器
+  - **CBP 图形编辑器**：显示和管理 Unit 文件，支持添加已有文件、移出工程、切换当前 Target、切换构建全部 Target，以及以文本方式打开
   - **项目资源库**：按文件夹层级显示可用项目，自动隐藏已在队列中的项目。支持按芯片筛选显示项目，减少 project 的显示
 - **拖放操作**：在构建队列中拖动来控制构建顺序
 - **cbp2clangd 版本检查**：自动检查 cbp2clangd 版本，确保使用兼容版本
 - **Ninja 路径配置**：支持自动检查和更新 Ninja 路径
-- **可自定义命令**：配置 cbp2clang 路径和构建脚本
+- **可自定义命令**：配置 cbp2clangd 路径和构建脚本
 - **构建输出**：使用 Pseudoterminal 在终端中显示日志，支持 ANSI 控制符和彩色输出
 - **队列持久化**：构建队列自动保存到项目文件夹的 `.cbp-build/queue.json`，重启 VS Code 后自动恢复队列顺序和勾选状态
-- **重新编译功能**：先清理后构建，提高开发效率
-- **单独清理功能**：可单独运行清理命令，方便管理构建文件
+- **Target 构建**：单 Target 模式按工程当前 Target 构建；启用“构建全部 Target”后按 CBP XML 中的顺序逐个构建，日志以 `[工程][Target]` 标识
+- **Target 状态持久化**：当前 Target 和“构建全部 Target”状态保存到 `.cbp-build/queue.json`
 - **compile_commands.json 合并**：手动勾选编译数据库中的文件，通过 cbp2clangd 合并优化 clangd 跨工程索引；或在构建/重新编译完成后自动合并
 - **编译时停止功能**：编译过程中可随时点击停止按钮中断编译
 - **编译诊断汇总**：构建完成后自动提取并汇总显示所有警告和错误
@@ -49,6 +49,19 @@
 
 **筛选状态保存**：筛选设置会保存在工作区级别，每个项目文件夹可以有独立的筛选配置。
 
+#### CBP 图形编辑与 Target 设置
+
+在构建队列中点击 `.cbp` 项目会打开图形化 CBP 编辑器。编辑器提供：
+
+- **当前 Target** 下拉框：切换该工程默认构建的 Target，不修改 CBP XML 中 Target 的顺序
+- **构建全部 Target**：按 XML 顺序逐个执行转换和构建；关闭后只构建当前 Target
+- **文件列表**：查看工程 Unit 文件
+- **添加已有文件**：添加 `<Unit>` 引用，文件默认对所有 Target 共享
+- **移出工程**：只删除 `<Unit>` XML，不删除磁盘上的源文件
+- **以文本方式打开**：切换到 VS Code 原生文本编辑器
+
+Target 选择或构建模式变化会同步更新构建队列中的状态显示。保存的 Target 被工程文件删除或重命名后，扩展会自动回退到第一个 Target。
+
 #### 添加到构建队列
 
 1. 在筛选后的**项目资源库**视图中浏览可用项目
@@ -63,8 +76,9 @@
 
 ### 4. 构建项目
 
-点击 **构建** 按钮（▶️）开始按指定顺序构建**构建队列**中勾选的项目。
-构建完成后，`cbp2clangd` 会为每个项目生成 `compile_commands.json`，该文件将自动出现在**编译数据库**视图中。
+点击 **构建** 按钮（▶️）开始按指定顺序构建**构建队列**中勾选的项目。每个项目按照其 Target 设置执行：单 Target 模式使用当前 Target，“构建全部 Target”模式按 XML 顺序逐个执行。
+
+每个 Target 都会先调用 `cbp2clangd --target <name>` 生成对应的构建文件，再执行构建脚本；构建完成后生成的 `compile_commands.json` 会自动出现在**编译数据库**视图中。
 
 ### 5. 编译数据库合并
 
@@ -81,14 +95,14 @@
 
 ### 6. 重新编译项目
 
-点击 **重新编译** 按钮（🔄）开始按指定顺序重新编译**构建队列**中勾选的项目：
-- 首先运行 `ninja -t clean` 清理构建文件
-- 然后执行正常的构建流程
+点击 **重新编译** 按钮（🔄）开始按 Target 设置重新编译**构建队列**中勾选的项目：
+- 对每个 Target 先生成对应的 Ninja 文件，再运行 `ninja -t clean`
+- 然后执行该 Target 的正常构建流程
 
 ### 7. 清理项目
 
-点击 **清理** 按钮（🗑️）开始按指定顺序清理**构建队列**中勾选的项目：
-- 仅运行 `ninja -t clean` 清理构建文件
+点击 **清理** 按钮（🗑️）开始按 Target 设置清理**构建队列**中勾选的项目：
+- 对每个 Target 先生成对应的 Ninja 文件，再运行 `ninja -t clean`
 - 不执行后续的构建流程
 
 ### 8. 工具链配置
@@ -127,13 +141,13 @@ compilers:
 
 | 设置项 | 默认值 | 描述 |
 |--------|--------|------|
-| `cbpBuildManager.cbp2clangPath` | `cbp2clang` | cbp2clang 可执行文件的路径，可从 [GitHub](https://github.com/greedyhao/cbp2clangd) 下载 |
-| `cbpBuildManager.convertCommand` | `{cbp2clang} {cbpFile} {compileCommands} -l ld` | 转换命令的模板 |
+| `cbpBuildManager.cbp2clangPath` | `cbp2clangd` | cbp2clangd 可执行文件的路径，可从 [GitHub](https://github.com/greedyhao/cbp2clangd) 下载 |
+| `cbpBuildManager.convertCommand` | `{cbp2clang} {cbpFile} {compileCommands} {target} -l ld` | 转换命令模板；`{target}` 展开为 `--target <name>`，未配置该占位符的旧模板会自动追加 `--target` |
 | `cbpBuildManager.buildCommand` | `./build.bat` | 运行构建脚本的命令 |
 | `cbpBuildManager.ninjaPath` | `""` | ninja 可执行文件的路径 |
-| `cbpBuildManager.noHeaderInsertion` | `true` | 禁止 clangd 在补全代码时插入头文件（需要 clangd v21+） |
+| `cbpBuildManager.noHeaderInsertion` | `true`（manifest 默认值） | 禁止 clangd 在补全代码时插入头文件（需要 clangd v21+） |
 | `cbpBuildManager.debug` | `false` | 启用调试模式，显示详细的调试信息 |
-| `cbpBuildManager.stopOnFailure` | `true` | 编译失败时停止后续项目的编译 |
+| `cbpBuildManager.stopOnFailure` | `true`（manifest 默认值） | 编译失败时停止后续项目/Target 的编译 |
 
 ## 故障排除
 
@@ -141,7 +155,7 @@ compilers:
 
 1. **检查脚本存在性**：确保 build.bat 存在于项目目录中
 2. **验证权限**：确保构建脚本具有执行权限
-3. **检查 cbp2clang 路径**：确保 cbp2clang 在系统 PATH 中或配置正确
+3. **检查 cbp2clangd 路径**：确保 cbp2clangd 在系统 PATH 中或配置正确
 
 ### 拖放功能不工作
 

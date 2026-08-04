@@ -2,7 +2,9 @@
 
 ## 项目概述
 
-CBP Build Manager 是一个 VS Code 扩展，用于管理和构建 Code::Blocks 项目。它提供了项目队列管理、批量构建、compile_commands.json 生成等功能。
+CBP Build Manager 是一个 VS Code 扩展，用于管理和构建 Code::Blocks 项目。它提供项目队列、按 Target 构建、compile_commands.json 管理，以及 CBP 图形化编辑功能。
+
+扩展通过外部 `cbp2clangd` 完成 CBP 转换。当前要求 cbp2clangd 1.6.0 或更高版本，以支持 `--target <name>`。
 
 ## 技术栈
 
@@ -10,261 +12,203 @@ CBP Build Manager 是一个 VS Code 扩展，用于管理和构建 Code::Blocks 
 - **运行环境**: VS Code Extension Host
 - **构建工具**: esbuild
 - **测试框架**: Mocha + @vscode/test-electron
-- **依赖工具**: cbp2clangd (外部命令行工具)
+- **依赖工具**: cbp2clangd（外部命令行工具）
+- **编辑器 UI**: VS Code CustomTextEditorProvider + 原生 Webview DOM
 
 ## 目录结构
 
 ```
 cbp-build-manager/
 ├── src/
-│   ├── extension.ts              # 扩展入口，命令注册
-│   ├── models/                   # 数据模型
-│   │   ├── items.ts             # CbpProjectItem, DirectoryItem
+│   ├── extension.ts                  # 扩展入口、视图和命令注册
+│   ├── models/
+│   │   ├── items.ts                  # CbpProjectItem、DirectoryItem
+│   │   └── CompileCommandsItem.ts    # 编译数据库节点
+│   ├── services/
+│   │   ├── DataManager.ts            # 队列、Target 状态、持久化
+│   │   ├── BuildService.ts            # build/rebuild/clean Target 执行计划
+│   │   ├── CbpProjectService.ts       # CBP Target/Unit 元数据读取
+│   │   ├── CompileCommandsMerger.ts   # 编译数据库合并
 │   │   └── index.ts
-│   ├── services/                 # 业务逻辑
-│   │   ├── DataManager.ts       # 队列管理、状态持久化
-│   │   └── index.ts
-│   ├── terminal/                 # 终端管理
-│   │   ├── TerminalManager.ts   # 伪终端、命令执行
-│   │   └── index.ts
-│   ├── providers/                # TreeView 提供者
+│   ├── providers/
 │   │   ├── BuildQueueProvider.ts      # 构建队列视图
 │   │   ├── ProjectLibraryProvider.ts  # 项目资源库视图
+│   │   ├── CompileCommandsProvider.ts # 编译数据库视图
+│   │   ├── CbpEditorProvider.ts       # CBP 图形化 Custom Text Editor
 │   │   └── index.ts
-│   ├── utils/                    # 工具函数
-│   │   ├── CommonUtils.ts       # 编码、版本比较、输出格式化
-│   │   └── index.ts
-│   └── test/                     # 测试文件
-│       ├── unit/                # 单元测试
-│       │   ├── utils.test.ts
-│       │   ├── dataManager.test.ts
-│       │   ├── models.test.ts
-│       │   └── providers.test.ts
-│       ├── integration/         # 集成测试
-│       │   └── terminal.test.ts
-│       └── extension.test.ts    # 扩展集成测试
-├── docs/                         # 文档
-│   ├── architecture.md          # 本文档
-│   └── development-plan.md      # 开发计划
-├── resources/                    # 资源文件
-│   └── icon.svg                 # 扩展图标
-├── package.json                  # 扩展配置
-└── tsconfig.json                 # TypeScript 配置
+│   ├── terminal/                      # 伪终端和命令执行
+│   ├── utils/                         # 编码、版本、输出处理
+│   └── test/unit/                     # 单元测试
+├── docs/                              # 文档
+├── package.json                       # 扩展配置和贡献点
+└── tsconfig.json
 ```
 
 ## 核心模块
 
-### 1. 数据模型 (models/)
+### 1. CbpDataManager
 
-#### CbpProjectItem
-- **职责**: 表示一个 CBP 项目节点
-- **属性**:
-  - `label`: 项目名称
-  - `fsPath`: 文件系统路径
-  - `isChecked`: 是否被勾选
-  - `checkboxState`: 复选框状态
-  - `showCheckbox`: 是否显示复选框
+`CbpDataManager` 是扩展状态的唯一来源，管理：
 
-#### DirectoryItem
-- **职责**: 表示一个文件夹节点
-- **用途**: 在项目资源库视图中组织项目
+- 有序构建队列、勾选状态和拖放顺序
+- 工作区发现的 CBP 文件
+- compile_commands.json 顺序和勾选状态
+- 当前 CBP Target
+- “构建全部 Target”模式
+- 芯片筛选状态
 
-### 2. 业务逻辑 (services/)
+Target 状态通过 `CbpProjectService` 读取 CBP XML 的 Target 标题，并保存到 `.cbp-build/queue.json`。保存状态中的 Target 被删除或重命名时，自动回退到 XML 中的第一个 Target。
 
-#### CbpDataManager
-- **职责**: 管理构建队列和项目状态
-- **核心功能**:
-  - `scanWorkspace()`: 扫描工作区中的 .cbp 文件
-  - `addToQueue()`: 添加项目到构建队列
-  - `removeFromQueue()`: 从队列移除项目
-  - `moveQueueItem()`: 调整队列顺序（拖拽支持）
-  - `updateCheckState()`: 更新项目勾选状态
-  - `saveState()` / `loadState()`: 状态持久化到 `.cbp-build/queue.json`
+队列项显示：
 
-- **数据结构**:
-  - `buildQueue`: 有序的构建队列
-  - `allDetectedProjects`: 所有检测到的项目路径
-  - `stateFilePath`: 持久化文件路径
+- 单 Target：`工程名 · Debug_lea`
+- 全部模式：`工程名 · 全部 Target (3)`
 
-### 3. 终端管理 (terminal/)
+构建列表不提供 Target 切换按钮；Target 相关操作统一在 CBP 图形编辑器中完成。
 
-#### BuildTerminal
-- **职责**: 实现 VS Code Pseudoterminal 接口
-- **特性**:
-  - ANSI 颜色支持
-  - Ninja 进度条单行刷新
-  - GBK 编码自动解码
+### 2. CbpProjectService
 
-#### TerminalManager
-- **职责**: 管理终端实例和命令执行
-- **核心功能**:
-  - `createOrShowTerminal()`: 创建或复用终端
-  - `runCommand()`: 执行命令
-  - `runCommandInDirectory()`: 在指定目录执行命令
+该服务只读取 CBP 的轻量元数据，不负责构建和写回 XML：
 
-- **特性**:
-  - 单例模式，避免重复创建终端
-  - 跨平台命令执行（Windows/Linux）
-  - 实时输出流处理
-  - 相对路径转换为绝对路径
+- 按 XML 顺序读取 `<Target title="...">`
+- 读取 `<Unit filename="...">`
+- 对同一路径做内存缓存
+- 文件内容变化后可调用 `invalidate()` 清除缓存
 
-### 4. 视图提供者 (providers/)
+### 3. BuildService
+
+BuildService 将 build、rebuild、clean 的 Target 执行逻辑统一起来。
+
+每个工程的执行计划为：
+
+```text
+build:
+  convert --target <Target>
+  build.bat
+
+rebuild:
+  convert --target <Target>
+  ninja -t clean
+  convert --target <Target>
+  build.bat
+
+clean:
+  convert --target <Target>
+  ninja -t clean
+```
+
+Target 列表来源：
+
+- 普通模式：当前 Target
+- “构建全部 Target”：CBP XML 中的全部 Target，保持 XML 顺序
+
+每个 Target 的日志使用 `[工程][Target]` 标识。`stopOnFailure` 开启时，某个 Target 失败会停止后续 Target 和项目；关闭时继续执行。
+
+全部 Target 操作结束后，会重新生成当前 Target 的 `build.ninja`、`build.bat` 和 `.clangd`，避免最后一个 Target 覆盖默认工作环境。
+
+转换命令支持：
+
+```text
+{cbp2clang} {cbpFile} {compileCommands} {target} -l ld
+```
+
+其中 `{target}` 展开为 `--target <name>`。用户旧模板未包含 `{target}` 时，扩展会自动在末尾追加 `--target <name>`。
+
+### 4. CbpEditorProvider
+
+`.cbp` 文件通过 `CustomTextEditorProvider` 默认使用图形编辑器打开。编辑器底层仍使用 VS Code `TextDocument`，因此保存、dirty 状态、撤销/重做和外部变更由 VS Code 管理。
+
+首版界面支持：
+
+- 当前 Target 下拉框
+- “构建全部 Target”开关
+- Unit 文件列表
+- 添加已有文件
+- 移出工程
+- 以文本方式打开
+
+文件操作只修改 `<Unit>` XML 引用，不删除磁盘文件。添加的 Unit 默认对全部 Target 共享。添加/删除通过 `WorkspaceEdit` 进行局部修改，尽量保持原有缩进和换行风格。
+
+### 5. TreeView 提供者
 
 #### BuildQueueProvider
-- **职责**: 提供构建队列 TreeView
-- **特性**:
-  - 支持拖拽排序
-  - 支持多选
-  - 支持复选框
+
+- 显示已加入构建队列的项目
+- 支持复选框、多选、拖放排序
+- 点击项目打开 CBP 图形编辑器
 
 #### ProjectLibraryProvider
-- **职责**: 提供项目资源库 TreeView
-- **特性**:
-  - 按目录分组显示
-  - 自动过滤已在队列中的项目
-  - 支持多选添加
 
-### 5. 工具函数 (utils/)
+- 按文件夹层级展示未加入队列的 CBP 项目
+- 支持多选添加
+- 支持芯片系列筛选
 
-#### CommonUtils
-- **核心函数**:
-  - `decodeBuffer()`: 自动检测并解码 Buffer（UTF-8/GBK）
-  - `formatOutput()`: 格式化输出（\n → \r\n）
-  - `compareVersions()`: 版本号比较
-  - `parseNinjaProgress()`: 解析 Ninja 进度条
-  - `processBuildCommandPath()`: 处理构建输出中的相对路径
-  - `OutputLineBuffer`: 行缓冲器，处理流式输出
+#### CompileCommandsProvider
 
-## 数据流
+- 展示工作区发现的 compile_commands.json
+- 支持复选框和拖放排序
+- 支持手动合并
 
-### 1. 扩展激活流程
-```
-activate()
-  ├─> CbpDataManager.setContext()
-  │     └─> loadState() (从 .cbp-build/queue.json 恢复状态)
-  ├─> 创建 BuildQueueProvider
-  ├─> 创建 ProjectLibraryProvider
-  ├─> 注册 TreeView
-  ├─> 注册命令
-  └─> scanWorkspace() (初始扫描)
-```
+## 状态持久化
 
-### 2. 构建流程
-```
-buildSelected 命令
-  ├─> checkAndPromptSave() (检查未保存文件)
-  ├─> 获取勾选的项目
-  ├─> checkCbp2clangVersion() (版本检查)
-  └─> 对每个项目:
-        ├─> 生成 cbp2clang 命令
-        ├─> runCommand() 生成 compile_commands.json
-        └─> runCommandInDirectory() 执行构建脚本
-```
+文件：`.cbp-build/queue.json`
 
-### 3. 状态持久化
-```
-用户操作 (添加/移除/排序/勾选)
-  ├─> 更新内存中的 buildQueue
-  ├─> saveState()
-  │     └─> 写入 .cbp-build/queue.json 文件
-  └─> 触发 TreeView 刷新
-```
-
-**持久化文件格式** (`.cbp-build/queue.json`):
 ```json
 {
-  "queuePaths": ["path/to/project1.cbp", "path/to/project2.cbp"],
-  "checkState": { "path/to/project1.cbp": true },
-  "chipFilter": "bt5790"
+  "queuePaths": ["path/to/project.cbp"],
+  "checkState": { "path/to/project.cbp": true },
+  "chipFilter": "bt5790",
+  "compileCommandsCheckState": {},
+  "compileCommandsOrder": [],
+  "targetSelections": {
+    "path/to/project.cbp": "Debug"
+  },
+  "buildAllTargets": {
+    "path/to/project.cbp": false
+  }
 }
 ```
+
+## 视图和命令
+
+主要命令包括：
+
+- `buildSelected`：构建勾选的项目及其 Target
+- `rebuildSelected`：按 Target 重建
+- `cleanSelected`：按 Target 清理
+- `refreshProjects`：重新扫描 CBP 项目
+- `addToBuild` / `removeFromBuild`：管理构建队列
+- `refreshCompileCommands` / `mergeCompileCommands`：管理编译数据库
+- `stopBuild`：停止当前构建
+- `checkCbp2clangVersion`：检查 cbp2clangd 版本
+
+Target 选择和“构建全部 Target”不再作为构建队列行内菜单，而只在 CBP 图形编辑器中操作，以避免占用队列显示空间。
 
 ## 配置项
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
 | `cbpBuildManager.cbp2clangPath` | string | `cbp2clang` | cbp2clangd 可执行文件路径 |
-| `cbpBuildManager.convertCommand` | string | `{cbp2clang} {cbpFile} {compileCommands} -l ld` | 转换命令模板 |
+| `cbpBuildManager.convertCommand` | string | `{cbp2clang} {cbpFile} {compileCommands} {target} -l ld` | 转换命令模板；`{target}` 展开为 `--target <name>` |
 | `cbpBuildManager.buildCommand` | string | `./build.bat` | 构建脚本命令 |
-| `cbpBuildManager.ninjaPath` | string | `` | Ninja 可执行文件路径 |
-| `cbpBuildManager.noHeaderInsertion` | boolean | `true` | 禁止 clangd 自动插入头文件 |
-| `cbpBuildManager.mergeCompileCommands` | boolean | `true` | 自动合并 compile_commands.json |
-| `cbpBuildManager.debug` | boolean | `false` | 启用调试模式 |
-| `cbpBuildManager.stopOnFailure` | boolean | `true` | 编译失败时停止后续编译 |
-
-## 命令列表
-
-| 命令 ID | 标题 | 功能 |
-|---------|------|------|
-| `cbp-build-manager.buildSelected` | 构建所选项目 | 构建队列中勾选的项目 |
-| `cbp-build-manager.rebuildSelected` | 重新编译所选项目 | 清理后重新构建 |
-| `cbp-build-manager.cleanSelected` | 清理所选项目 | 运行 ninja -t clean |
-| `cbp-build-manager.refreshProjects` | 刷新项目 | 重新扫描工作区 |
-| `cbp-build-manager.addToBuild` | 添加到编译列表 | 从资源库添加到队列 |
-| `cbp-build-manager.removeFromBuild` | 从编译列表移除 | 从队列移除项目 |
-| `cbp-build-manager.checkCbp2clangVersion` | 检查版本 | 检查 cbp2clangd 版本 |
-
-## 依赖关系
-
-```
-extension.ts
-  ├─> services/DataManager
-  ├─> providers/BuildQueueProvider
-  ├─> providers/ProjectLibraryProvider
-  ├─> terminal/TerminalManager
-  └─> utils/CommonUtils
-
-BuildQueueProvider
-  └─> services/DataManager
-
-ProjectLibraryProvider
-  └─> services/DataManager
-
-TerminalManager
-  └─> utils/CommonUtils
-
-DataManager
-  └─> models/items
-```
+| `cbpBuildManager.ninjaPath` | string | 空 | Ninja 可执行文件路径 |
+| `cbpBuildManager.noHeaderInsertion` | boolean | true | 禁止 clangd 自动插入头文件，需要 clangd v21+ |
+| `cbpBuildManager.debug` | boolean | false | 启用调试模式 |
+| `cbpBuildManager.stopOnFailure` | boolean | true | Target 或项目失败时停止后续构建 |
 
 ## 测试策略
 
-### 单元测试
-- **utils.test.ts**: 测试工具函数（版本比较、编码解码、行缓冲）
-- **dataManager.test.ts**: 测试队列管理逻辑
-- **models.test.ts**: 测试数据模型初始化
-- **providers.test.ts**: 测试 TreeView 数据提供
-
-### 集成测试
-- **terminal.test.ts**: 测试终端创建和命令执行
-- **extension.test.ts**: 测试扩展激活和命令注册
-
-## 设计原则
-
-1. **单一职责**: 每个模块只负责一个明确的功能
-2. **依赖注入**: 通过构造函数注入依赖，便于测试
-3. **状态管理**: 集中在 DataManager，避免状态分散
-4. **错误处理**: 所有异步操作都有错误处理和用户提示
-5. **跨平台**: 命令执行兼容 Windows 和 Linux
-
-## 性能优化
-
-1. **终端复用**: 使用单例模式避免重复创建终端
-2. **增量更新**: TreeView 只在数据变化时刷新
-3. **异步扫描**: 使用 `vscode.workspace.findFiles` 异步扫描
-4. **流式处理**: 使用 OutputLineBuffer 处理大量输出
+- DataManager：队列、Target 状态、全部 Target 模式、状态迁移
+- CbpProjectService：Target/Unit 顺序、缓存和失效
+- CbpEditorProvider：Unit 增删、格式保留和文本切换
+- Provider/Model：TreeView 节点和显示信息
+- Terminal/BuildService：命令执行、Target 顺序和失败行为
+- Rust cbp2clangd：Target 解析、宏展开、生成器一致性和静态库链接名
 
 ## 已知限制
 
-1. **cbp2clangd 版本要求**: 最低 v1.4.1
-2. **clangd 版本要求**: noHeaderInsertion 需要 v21+
-3. **平台支持**: 主要针对 Windows，Linux 支持有限
-4. **工作区限制**: 假设单个工作区文件夹
-
-## 未来扩展方向
-
-1. 支持多工作区文件夹
-2. 支持自定义构建配置
-3. 支持构建任务并行执行
-4. 支持构建历史记录
-5. 支持构建性能分析
+1. 当前假设使用单个工作区文件夹。
+2. 多 Target 构建按顺序执行，不并行执行。
+3. Unit 首版默认对所有 Target 共享，不编辑 `<Option target="...">` 归属。
+4. 图形编辑器当前主要编辑 Unit 和 Target 选择，Target 编译/链接参数仍建议使用文本编辑器修改。
+5. `noHeaderInsertion` 需要 clangd v21 或更高版本。
