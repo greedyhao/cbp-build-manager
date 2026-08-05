@@ -21,7 +21,7 @@
         "command": "cbp-build-manager.buildSelected",
         "title": "构建所选项目",
         "category": "CBP",
-        "icon": "$(play)"
+        "icon": "$(gear)"
       },
       {
         "command": "cbp-build-manager.refreshProjects",

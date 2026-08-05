@@ -35,6 +35,7 @@ cbp-build-manager/
 │   │   ├── ProjectLibraryProvider.ts  # 项目资源库视图
 │   │   ├── CompileCommandsProvider.ts # 编译数据库视图
 │   │   ├── CbpEditorProvider.ts       # CBP 图形化 Custom Text Editor
+│   │   ├── cbpEditorUtils.ts           # Unit 公共根目录、树和搜索模型
 │   │   └── index.ts
 │   ├── terminal/                      # 伪终端和命令执行
 │   ├── utils/                         # 编码、版本、输出处理
@@ -126,6 +127,17 @@ Target 列表来源：
 - 添加已有文件
 - 移出工程
 - 以文本方式打开
+
+Unit 文件展示和搜索规则：
+
+- 以 CBP 所在目录为路径解析基准，计算所有 Unit 的公共显示根目录
+- 文件按目录树展示，目录默认展开第一层
+- 显示时隐藏路径中的 `..`，但保留 CBP XML 中的原始 `filename`
+- 搜索按原始路径、显示路径和文件名进行大小写不敏感的部分匹配
+- 输入时实时过滤；按 Enter 定位到第一个匹配文件，自动展开父目录、滚动并短暂高亮
+- 搜索定位只发生在图形编辑器中，不打开外部源文件，便于随后右键移出工程
+- 没有匹配时显示提示；Escape 清空搜索并恢复完整树
+- 文档或 Target 状态刷新时保留目录展开状态
 
 文件操作只修改 `<Unit>` XML 引用，不删除磁盘文件。添加的 Unit 默认对全部 Target 共享。添加/删除通过 `WorkspaceEdit` 进行局部修改，尽量保持原有缩进和换行风格。
 

@@ -4,6 +4,12 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.7.1] - 2026-08-05
+
+### Added
+- 图形编辑器 Unit 文件改为按公共目录树展示，隐藏显示路径中的 `..`
+- 新增工程文件搜索：支持路径/文件名部分匹配，Enter 定位并高亮第一个结果，无结果时提示
+
 ## [1.7.0] - 2026-08-04
 
 ### Added

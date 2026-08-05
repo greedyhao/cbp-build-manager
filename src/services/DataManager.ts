@@ -112,7 +112,7 @@ export class CbpDataManager {
   }
 
   protected saveState() {
-    if (!this.stateFilePath) {
+    if (!this.stateFilePath || (this.allDetectedProjects.length === 0 && this.buildQueue.length === 0)) {
       return;
     }
 
@@ -158,6 +158,15 @@ export class CbpDataManager {
   async scanWorkspace() {
     const cbpFiles = await vscode.workspace.findFiles("**/*.cbp");
     this.allDetectedProjects = cbpFiles.map((f) => f.fsPath);
+    if (this.allDetectedProjects.length > 0) {
+      this.saveState();
+    } else {
+      // 没有 CBP 时不创建或覆盖状态文件，但保留已有 queue.json，
+      // 以便工程文件稍后恢复时继续使用原有状态。
+      this.buildQueue = [];
+      this.targetSelections = {};
+      this.buildAllTargets = {};
+    }
     this._onDidChangeTreeData.fire();
   }
 
@@ -200,7 +209,9 @@ export class CbpDataManager {
           (orderMap.get(a.fsPath) ?? 999) - (orderMap.get(b.fsPath) ?? 999),
       );
 
-    this.saveState();
+    if (this.allDetectedProjects.length > 0 || this.buildQueue.length > 0) {
+      this.saveState();
+    }
     this._onDidChangeTreeData.fire();
   }
 
