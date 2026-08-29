@@ -1,6 +1,12 @@
 import * as assert from "assert";
 import * as path from "path";
-import { buildUnitTree, filterUnitTree, toCbpRelativePath } from "../../providers/cbpEditorUtils";
+import {
+  buildUnitTree,
+  extractUnitEntries,
+  filterUnitTree,
+  planUnitInsertions,
+  toCbpRelativePath,
+} from "../../providers/cbpEditorUtils";
 
 suite("CBP Editor UI helpers", () => {
   test("builds and sorts a normalized directory tree", () => {
@@ -97,5 +103,51 @@ suite("toCbpRelativePath", () => {
       toCbpRelativePath(projectDir, path.join("E:", "libs", "sdk.c")),
       "E:/libs/sdk.c",
     );
+  });
+});
+
+suite("planUnitInsertions", () => {
+  const cbp = [
+    "<?xml version=\"1.0\"?>",
+    "<Project>",
+    "\t<Unit filename=\"main.c\">",
+    "\t\t<Option compilerVar=\"CC\" />",
+    "\t</Unit>",
+    "\t<Unit filename=\"src/util.c\" />",
+    "</Project>",
+  ].join("\n");
+
+  test("inserts before the first unit that sorts after the new file", () => {
+    const entries = extractUnitEntries(cbp);
+    const plans = planUnitInsertions(entries, ["include/config.h"], cbp.lastIndexOf("</Project>"));
+    assert.strictEqual(plans.length, 1);
+    assert.strictEqual(plans[0].filename, "include/config.h");
+    // before the line of <Unit filename="main.c">
+    assert.ok(cbp.slice(plans[0].offset).startsWith('\t<Unit filename="main.c">'));
+  });
+
+  test("a file sorting after every unit falls back to </Project>", () => {
+    const entries = extractUnitEntries(cbp);
+    const plans = planUnitInsertions(entries, ["src/zzz.c"], cbp.lastIndexOf("</Project>"));
+    assert.strictEqual(plans[0].offset, cbp.lastIndexOf("</Project>"));
+  });
+
+  test("multiple additions are returned sorted, not in selection order", () => {
+    const entries = extractUnitEntries(cbp);
+    const plans = planUnitInsertions(
+      entries,
+      ["src/zzz.c", "include/config.h", "app.c"],
+      cbp.lastIndexOf("</Project>"),
+    );
+    assert.deepStrictEqual(plans.map((plan) => plan.filename), ["app.c", "include/config.h", "src/zzz.c"]);
+  });
+
+  test("comparison is case-insensitive and tolerates mixed separators", () => {
+    const text = "<Project>\n<Unit filename=\"SRC/A.c\" />\n<Unit filename=\"src/b.c\" />\n</Project>";
+    const entries = extractUnitEntries(text);
+    const plans = planUnitInsertions(entries, ["src\\a1.c"], text.lastIndexOf("</Project>"));
+    // "src/a1.c" sorts after "SRC/A.c" and before "src/b.c" under
+    // case-insensitive comparison, so it inserts before the "src/b.c" line.
+    assert.ok(text.slice(plans[0].offset).startsWith('<Unit filename="src/b.c"'));
   });
 });

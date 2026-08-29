@@ -8,6 +8,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Changed
 - 图形编辑器添加文件时，`<Unit filename>` 与官方 Code::Blocks 一致写入相对 `.cbp` 所在目录的相对路径（工程目录外使用 `../` 前缀），不再写入绝对路径；新增 `<Unit>` 采用 `<Unit filename="...">` + `<Option compilerVar="CC" />` 的官方布局，并复用文件中已有 Unit 的 Option 属性风格
+- 添加的 Unit 按相对路径排序插入到文件中应在的位置（大小写不敏感比较），不再一律追加到末尾，保持与官方 Code::Blocks 保存工程时一致的有序状态
 
 ### Fixed
 - 修复 1.7.1 中文件树“隐藏显示路径中的 `..`”未实际生效的问题，工程目录外的相对路径 Unit 现在不会在目录树中显示 `..` 层级

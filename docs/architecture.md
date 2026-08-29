@@ -141,7 +141,7 @@ Unit 文件展示和搜索规则：
 
 文件操作只修改 `<Unit>` XML 引用，不删除磁盘文件。添加的 Unit 默认对全部 Target 共享。添加/删除通过 `WorkspaceEdit` 进行局部修改，尽量保持原有缩进和换行风格。
 
-添加文件时，与官方 Code::Blocks 一致，`<Unit filename>` 写入相对于 `.cbp` 所在目录的相对路径（工程目录之外的文件使用 `../` 前缀，例如 `../../platform/bsp/bsp_app/ab_command/ab_common.c`）；仅当文件与 `.cbp` 不在同一盘符/根下时才写入绝对路径。新增 `<Unit>` 会复用文件中已有 Unit 的 `<Option>` 属性风格（如 `compilerVar="CC"`），以 `<Unit>...<Option .../></Unit>` 的形式插入。
+添加文件时，与官方 Code::Blocks 一致，`<Unit filename>` 写入相对于 `.cbp` 所在目录的相对路径（工程目录之外的文件使用 `../` 前缀，例如 `../../platform/bsp/bsp_app/ab_command/ab_common.c`）；仅当文件与 `.cbp` 不在同一盘符/根下时才写入绝对路径。新增 `<Unit>` 会复用文件中已有 Unit 的 `<Option>` 属性风格（如 `compilerVar="CC"`），以 `<Unit>...<Option .../></Unit>` 的形式插入。每个新 Unit 按相对路径的大小写不敏感排序，插入到已有 Unit 列表中应在的位置（排在所有 Unit 之后时插入 `</Project>` 前），使 CBP 中的 Unit 顺序与官方 Code::Blocks 保存工程时一样保持有序；批量添加的多个文件也按排序后的顺序逐个插入。
 
 ### 5. TreeView 提供者
 

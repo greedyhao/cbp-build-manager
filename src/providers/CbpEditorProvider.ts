@@ -3,7 +3,9 @@ import * as vscode from "vscode";
 import { CbpDataManager } from "../services/DataManager";
 import {
   buildUnitTree,
+  extractUnitEntries,
   filterUnitTree,
+  planUnitInsertions,
   toCbpRelativePath,
   UnitTreeNode,
 } from "./cbpEditorUtils";
@@ -197,19 +199,19 @@ export class CbpEditorProvider implements vscode.CustomTextEditorProvider {
     const innerIndent = optionAttrs !== undefined ? `${indent}    ` : "";
     const optionLine =
       optionAttrs !== undefined ? `${newline}${innerIndent}<Option ${optionAttrs} />${newline}` : "";
-    const insertion = additions
-      .map((file) => {
-        const unitOpen = `<Unit filename="${file.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}"`;
-        return optionLine !== "" ? `${indent}${unitOpen}>${optionLine}${indent}</Unit>` : `${indent}${unitOpen} />`;
-      })
-      .join(newline) + newline;
     const projectClose = text.lastIndexOf("</Project>");
     if (projectClose < 0) {
       vscode.window.showErrorMessage("CBP 文件中未找到 </Project>");
       return;
     }
+    // Keep <Unit> entries sorted in the file like official Code::Blocks does:
+    // insert each new unit before the first existing unit that sorts after it.
     const edit = new vscode.WorkspaceEdit();
-    edit.insert(document.uri, document.positionAt(projectClose), insertion);
+    for (const plan of planUnitInsertions(extractUnitEntries(text), additions, projectClose)) {
+      const unitOpen = `<Unit filename="${plan.filename.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}"`;
+      const block = optionLine !== "" ? `${indent}${unitOpen}>${optionLine}${indent}</Unit>${newline}` : `${indent}${unitOpen} />${newline}`;
+      edit.insert(document.uri, document.positionAt(plan.offset), block);
+    }
     await vscode.workspace.applyEdit(edit);
   }
 

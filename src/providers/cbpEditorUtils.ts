@@ -139,3 +139,47 @@ export function toCbpRelativePath(projectDir: string, filePath: string): string 
   }
   return relative.replace(/\\/g, "/");
 }
+
+export const unitPattern = /<Unit\b[^>]*\bfilename\s*=\s*["']([^"']+)["'][^>]*>[\s\S]*?<\/Unit>|<Unit\b[^>]*\bfilename\s*=\s*["']([^"']+)["'][^>]*\/>/gi;
+
+export interface UnitEntry {
+  /** filename attribute with backslashes normalized to forward slashes */
+  filename: string;
+  /** Offset of the `<Unit` tag start in the document text. */
+  offset: number;
+  /** Offset of the first character of the line containing the tag. */
+  lineStart: number;
+}
+
+export function extractUnitEntries(text: string): UnitEntry[] {
+  return Array.from(text.matchAll(unitPattern), (match) => {
+    const offset = match.index ?? 0;
+    return {
+      filename: (match[1] || match[2]).replace(/\\/g, "/"),
+      offset,
+      lineStart: text.lastIndexOf("\n", offset - 1) + 1,
+    };
+  });
+}
+
+/**
+ * Plan where each new Unit should be inserted so the Unit order in the file
+ * stays sorted, matching how official Code::Blocks saves projects. A file
+ * sorting after every existing unit goes to fallbackOffset (the position of
+ * `</Project>`). Comparison is case-insensitive on the stored relative path.
+ */
+export function planUnitInsertions(
+  entries: readonly UnitEntry[],
+  additions: readonly string[],
+  fallbackOffset: number,
+): Array<{ filename: string; offset: number }> {
+  const compare = (left: string, right: string) =>
+    left.localeCompare(right, undefined, { sensitivity: "base" });
+  return [...additions]
+    .map((filename) => filename.replace(/\\/g, "/"))
+    .sort(compare)
+    .map((filename) => {
+      const greater = entries.find((entry) => compare(entry.filename, filename) > 0);
+      return { filename, offset: greater ? greater.lineStart : fallbackOffset };
+    });
+}
