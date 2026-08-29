@@ -1,5 +1,6 @@
 import * as assert from "assert";
-import { buildUnitTree, filterUnitTree } from "../../providers/cbpEditorUtils";
+import * as path from "path";
+import { buildUnitTree, filterUnitTree, toCbpRelativePath } from "../../providers/cbpEditorUtils";
 
 suite("CBP Editor UI helpers", () => {
   test("builds and sorts a normalized directory tree", () => {
@@ -18,9 +19,9 @@ suite("CBP Editor UI helpers", () => {
   test("removes leading parent directories from display while preserving original path", () => {
     const tree = buildUnitTree(["../common/platform.c", "../common/include/platform.h", "src/main.c"]);
     assert.deepStrictEqual(tree.map((node) => node.name), ["common", "src"]);
-    assert.strictEqual(tree[0].children[0].path, "../common/platform.c");
-    assert.strictEqual(tree[0].children[0].displayPath, "common/platform.c");
-    assert.strictEqual(tree[0].children[1].children[0].displayPath, "common/include/platform.h");
+    assert.strictEqual(tree[0].children[1].path, "../common/platform.c");
+    assert.strictEqual(tree[0].children[1].displayPath, "common/platform.c");
+    assert.strictEqual(tree[0].children[0].children[0].displayPath, "common/include/platform.h");
   });
   test("uses the project directory as the base for common-root display", () => {
     const tree = buildUnitTree(
@@ -48,8 +49,9 @@ suite("CBP Editor UI helpers", () => {
   test("partial filename matching keeps the original path for removal", () => {
     const tree = buildUnitTree(["projects/watch320/main.c", "platform/bsp/bsp.h"], "D:/workspace");
     const filtered = filterUnitTree(tree, "main");
-    assert.strictEqual(filtered[0].children[0].path, "projects/watch320/main.c");
-    assert.strictEqual(filtered[0].children[0].displayPath, "projects/watch320/main.c");
+    assert.strictEqual(filtered[0].name, "projects");
+    assert.strictEqual(filtered[0].children[0].children[0].path, "projects/watch320/main.c");
+    assert.strictEqual(filtered[0].children[0].children[0].displayPath, "projects/watch320/main.c");
   });
   test("returns an empty tree when there is no match", () => {
     const tree = buildUnitTree(["src/main.c", "include/main.h"]);
@@ -59,5 +61,41 @@ suite("CBP Editor UI helpers", () => {
   test("an empty query preserves the complete tree", () => {
     const tree = buildUnitTree(["a.c", "src/b.c"]);
     assert.deepStrictEqual(filterUnitTree(tree, ""), tree);
+  });
+});
+
+suite("toCbpRelativePath", () => {
+  const projectDir = path.join("D:", "workspace", "projects", "watch320");
+
+  test("files under the project dir stay relative to the cbp directory", () => {
+    assert.strictEqual(
+      toCbpRelativePath(projectDir, path.join("D:", "workspace", "projects", "watch320", "app.c")),
+      "app.c",
+    );
+    assert.strictEqual(
+      toCbpRelativePath(projectDir, path.join("D:", "workspace", "projects", "watch320", "src", "boot.c")),
+      "src/boot.c",
+    );
+  });
+
+  test("files outside the project dir use ../ prefixes", () => {
+    assert.strictEqual(
+      toCbpRelativePath(projectDir, path.join("D:", "workspace", "platform", "bsp", "bsp_app", "ab_command", "ab_common.c")),
+      "../../platform/bsp/bsp_app/ab_command/ab_common.c",
+    );
+  });
+
+  test("sibling files reference the parent directory", () => {
+    assert.strictEqual(
+      toCbpRelativePath(projectDir, path.join("D:", "workspace", "projects", "shared", "lib.c")),
+      "../shared/lib.c",
+    );
+  });
+
+  test("paths on a different drive keep the absolute form", () => {
+    assert.strictEqual(
+      toCbpRelativePath(projectDir, path.join("E:", "libs", "sdk.c")),
+      "E:/libs/sdk.c",
+    );
   });
 });

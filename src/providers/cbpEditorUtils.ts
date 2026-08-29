@@ -1,3 +1,5 @@
+import * as path from "path";
+
 export interface UnitTreeNode {
   name: string;
   /** Original path stored in the CBP Unit attribute. */
@@ -59,7 +61,11 @@ export function buildUnitTree(
 
   originalPaths.forEach((originalPath, unitIndex) => {
     const resolved = resolvedPaths[unitIndex];
-    const displaySegments = resolved.slice(rootSegments.length);
+    // Hide leading `..` in the display tree while keeping the original path.
+    let displaySegments = resolved.slice(rootSegments.length);
+    while (displaySegments.length > 1 && displaySegments[0] === "..") {
+      displaySegments = displaySegments.slice(1);
+    }
     const segments = displaySegments.length > 0 ? displaySegments : resolved.slice(-1);
     if (segments.length === 0) {
       return;
@@ -118,4 +124,18 @@ export function filterUnitTree(nodes: readonly UnitTreeNode[], query: string): U
     }
   }
   return result;
+}
+
+/**
+ * Convert an absolute file path to a CBP-style path relative to the CBP
+ * directory, matching the official Code::Blocks layout (e.g.
+ * `../../platform/...` for files outside the project directory). Falls back
+ * to the absolute form only when the file sits on a different drive/root.
+ */
+export function toCbpRelativePath(projectDir: string, filePath: string): string {
+  const relative = path.relative(projectDir, filePath);
+  if (!relative || path.isAbsolute(relative)) {
+    return filePath.replace(/\\/g, "/");
+  }
+  return relative.replace(/\\/g, "/");
 }

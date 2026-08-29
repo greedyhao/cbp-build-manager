@@ -1,7 +1,12 @@
 import * as path from "path";
 import * as vscode from "vscode";
 import { CbpDataManager } from "../services/DataManager";
-import { buildUnitTree, filterUnitTree, UnitTreeNode } from "./cbpEditorUtils";
+import {
+  buildUnitTree,
+  filterUnitTree,
+  toCbpRelativePath,
+  UnitTreeNode,
+} from "./cbpEditorUtils";
 
 const unitPattern = /<Unit\b[^>]*\bfilename\s*=\s*["']([^"']+)["'][^>]*>[\s\S]*?<\/Unit>|<Unit\b[^>]*\bfilename\s*=\s*["']([^"']+)["'][^>]*\/>/gi;
 const targetPattern = /<Target\b[^>]*\btitle\s*=\s*["']([^"']+)["'][^>]*>/gi;
@@ -174,21 +179,31 @@ export class CbpEditorProvider implements vscode.CustomTextEditorProvider {
     if (!selected?.length) {
       return;
     }
-    const projectDir = vscode.Uri.file(document.uri.fsPath.replace(/[\\/][^\\/]+$/, "")).fsPath;
-    const projectPrefix = `${projectDir}${process.platform === "win32" ? "\\" : "/"}`;
-    const existing = new Set(getUnits(document.getText()).map((unit) => unit.replace(/\\/g, "/")));
+    const text = document.getText();
+    const projectDir = path.dirname(document.uri.fsPath);
+    const existing = new Set(getUnits(text).map((unit) => unit.replace(/\\/g, "/")));
     const additions = selected
-      .map((uri) => vscode.Uri.file(uri.fsPath).fsPath)
-      .map((file) => file.startsWith(projectPrefix) ? file.slice(projectPrefix.length).replace(/\\/g, "/") : file.replace(/\\/g, "/"))
+      .map((uri) => toCbpRelativePath(projectDir, uri.fsPath))
       .filter((file) => !existing.has(file));
     if (!additions.length) {
       return;
     }
-    const newline = document.getText().includes("\r\n") ? "\r\n" : "\n";
-    const indentMatch = document.getText().match(/\r?\n(\s*)<Unit\b/);
+    const newline = text.includes("\r\n") ? "\r\n" : "\n";
+    // Match the official Code::Blocks layout: <Unit filename="..."> with an
+    // <Option compilerVar="CC" /> child, reusing attribute styles already in the file.
+    const indentMatch = text.match(/\r?\n([ \t]*)<Unit\b/i);
     const indent = indentMatch?.[1] || "    ";
-    const insertion = additions.map((file) => `${indent}<Unit filename="${file.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}" />`).join(newline) + newline;
-    const projectClose = document.getText().lastIndexOf("</Project>");
+    const optionAttrs = text.match(/<Unit\b[^>]*>\s*<Option\b([^>]*)\/>/i)?.[1]?.trim();
+    const innerIndent = optionAttrs !== undefined ? `${indent}    ` : "";
+    const optionLine =
+      optionAttrs !== undefined ? `${newline}${innerIndent}<Option ${optionAttrs} />${newline}` : "";
+    const insertion = additions
+      .map((file) => {
+        const unitOpen = `<Unit filename="${file.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}"`;
+        return optionLine !== "" ? `${indent}${unitOpen}>${optionLine}${indent}</Unit>` : `${indent}${unitOpen} />`;
+      })
+      .join(newline) + newline;
+    const projectClose = text.lastIndexOf("</Project>");
     if (projectClose < 0) {
       vscode.window.showErrorMessage("CBP 文件中未找到 </Project>");
       return;
