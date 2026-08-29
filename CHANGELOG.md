@@ -12,6 +12,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Fixed
 - 修复 1.7.1 中文件树“隐藏显示路径中的 `..`”未实际生效的问题，工程目录外的相对路径 Unit 现在不会在目录树中显示 `..` 层级
+- 修复 Windows 上点击“停止编译”无效的问题：原来 `child.kill()` 只终止 `cmd.exe` 包装进程，ninja/编译器等孙进程变成孤儿继续运行并占用输出管道，导致停止后构建流程仍继续。现在改用 `taskkill /T /F` 终止整个进程树，且在输出管道完全关闭前保留子进程引用，保证停止请求能中断后续 Target/项目的构建
 
 ## [1.7.1] - 2026-08-05
 

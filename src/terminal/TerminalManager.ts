@@ -140,10 +140,16 @@ export interface DiagnosticsCollector {
 let currentBuildChild: cp.ChildProcess | null = null;
 let stopRequested = false;
 
+/**
+ * 强制结束进程树。Windows 上构建命令通过 `cmd.exe /c ...` 启动，
+ * 直接 child.kill() 只终止 cmd.exe 本身，它启动的 ninja/编译器等
+ * 孙进程会变成孤儿进程继续运行，并且继承的 stdout/stderr 管道保持
+ * 打开，导致上层命令收不到 close 事件、构建流程无法停止。
+ * taskkill /T 会先枚举并终止整个子进程树，再终止 cmd.exe。
+ */
 export function stopCurrentBuild(): boolean {
   stopRequested = true;
   if (currentBuildChild && !currentBuildChild.killed) {
-    currentBuildChild.kill();
     if (process.platform === "win32" && currentBuildChild.pid) {
       try {
         cp.execSync(`taskkill /pid ${currentBuildChild.pid} /T /F`, {
@@ -153,9 +159,13 @@ export function stopCurrentBuild(): boolean {
         // 进程可能已经退出，忽略错误
       }
     }
+    currentBuildChild.kill();
     return true;
   }
-  return false;
+  // 没有正在运行的子进程：如果是上一次停止后管道仍被孤儿进程占用，
+  // 保留 stopRequested 让 runCommandInDirectory 的下一次 close 事件
+  // 以 STOPPED 结束，确保构建流程中断。
+  return stopRequested;
 }
 
 // --- 命令执行 ---
@@ -307,20 +317,26 @@ export function runCommandInDirectory(
       }
 
       child.on("close", (code: number) => {
-        currentBuildChild = null;
+        // Windows 上 cmd.exe 被终止后，被启动的 exe（编译器等）可能仍在
+        // 运行并持有 stdout/stderr 管道，close 会等到所有管道关闭才触发。
+        // 这里不能清空 currentBuildChild，否则用户再点一次停止按钮时
+        // 就找不到该杀的进程了；等管道真正关闭时才释放引用。
+        const wasStopped = stopRequested;
+        stopRequested = false;
+
         // 确保缓冲区最后的内容被打印
         lineBuffer.flush();
         // 最后换个行，结束进度条状态
         pty.write("\r\n");
 
-        const wasStopped = stopRequested;
-        stopRequested = false;
-
         if (wasStopped) {
+          currentBuildChild = null;
           reject(new Error("STOPPED"));
         } else if (code === 0) {
+          currentBuildChild = null;
           resolve();
         } else {
+          currentBuildChild = null;
           reject(new Error(`Exit code ${code}`));
         }
       });
