@@ -28,8 +28,8 @@ export {
 } from "./services/index";
 
 // --- 常量定义 ---
-// cbp2clangd 最小要求版本（需要 --target 支持）
-const MIN_REQUIRED_CBP2CLANG_VERSION = "1.8.1";
+// cbp2clangd 最小要求版本（--json 合并支持 --output-dir 指定 .clangd 写入位置）
+const MIN_REQUIRED_CBP2CLANG_VERSION = "1.8.2";
 
 // Import from modules
 import { CbpDataManager } from "./services/DataManager.js";
@@ -453,6 +453,7 @@ export function activate(context: vscode.ExtensionContext) {
           cbp2clangPath,
           debugMode,
           (msg) => terminal.write(msg),
+          vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
         );
         if (success) {
           vscode.window.showInformationMessage(

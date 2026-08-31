@@ -229,12 +229,14 @@ export async function mergeCompileCommands(
 /**
  * 调用 cbp2clangd merge-compile-commands 合并多个 compile_commands.json
  * 最后一个 json 路径作为合并目标，其余为源
+ * @param workspaceRoot 工作区根目录，.clangd 写在这里（默认为第一个 json 所在目录）
  */
 export async function mergeCompileCommandsFiles(
   compileCommandsPaths: string[],
   cbp2clangPath: string,
   debug: boolean = false,
   terminalWrite?: (msg: string) => void,
+  workspaceRoot?: string,
 ): Promise<boolean> {
   const log = (msg: string) => {
     if (terminalWrite) {
@@ -296,6 +298,11 @@ export async function mergeCompileCommandsFiles(
 
   try {
     const mergeArgs = ["merge-compile-commands", "--json", ...orderedPaths];
+
+    // 指定 .clangd 所在的工作区根目录，避免写到第一个 json 的目录里
+    const outputDir =
+      workspaceRoot ?? path.dirname(path.resolve(orderedPaths[0]));
+    mergeArgs.push("--output-dir", outputDir);
 
     if (debug) {
       mergeArgs.push("--debug");

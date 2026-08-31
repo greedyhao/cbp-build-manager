@@ -4,7 +4,7 @@
 
 CBP Build Manager 是一个 VS Code 扩展，用于管理和构建 Code::Blocks 项目。它提供项目队列、按 Target 构建、compile_commands.json 管理，以及 CBP 图形化编辑功能。
 
-扩展通过外部 `cbp2clangd` 完成 CBP 转换。当前要求 cbp2clangd 1.8.1 或更高版本，以支持 `--target <name>` 及构建脚本的 pre/post 命令错误检查（检查行不回显，不污染构建日志与诊断汇总）。
+扩展通过外部 `cbp2clangd` 完成 CBP 转换。当前要求 cbp2clangd 1.8.2 或更高版本，以支持 `--target <name>`、构建脚本的 pre/post 命令错误检查（检查行不回显，不污染构建日志与诊断汇总），以及 `merge-compile-commands --json --output-dir` 将 `.clangd` 写到工作区根目录（合并后拍平各项目的 `PathMatch` 片段）。
 
 ## 技术栈
 

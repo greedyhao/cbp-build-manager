@@ -159,6 +159,7 @@ export class BuildService {
           cfg.cbp2clangPath,
           cfg.debugMode,
           (msg) => terminal.write(msg),
+          vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
         );
       }
     }

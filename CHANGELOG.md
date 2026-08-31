@@ -4,6 +4,12 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [Unreleased]
+
+### Fixed
+- 构建后自动合并与手动合并 compile_commands.json 时，向 cbp2clangd 传递 `--output-dir <工作区根目录>`，使合并后的 `.clangd` 写到工作区根目录而不是第一个 json 所在目录（obj 输出目录）。此前 `.clangd` 会残留在各项目 convert 阶段追加的 `If/PathMatch` 片段，合并的拍平行为失效
+- cbp2clangd 最低要求版本提升至 1.8.2（`merge-compile-commands --json` 支持 `--output-dir`，并修复连续合并时 `.clangd` 残留重复 `CompilationDatabase` 键的问题）
+
 ## [1.8.0] - 2026-08-29
 
 ### Changed
