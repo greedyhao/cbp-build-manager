@@ -29,7 +29,7 @@ export {
 
 // --- 常量定义 ---
 // cbp2clangd 最小要求版本（需要 --target 支持）
-const MIN_REQUIRED_CBP2CLANG_VERSION = "1.7.0";
+const MIN_REQUIRED_CBP2CLANG_VERSION = "1.8.1";
 
 // Import from modules
 import { CbpDataManager } from "./services/DataManager.js";
