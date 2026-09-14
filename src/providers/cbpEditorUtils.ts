@@ -140,7 +140,254 @@ export function toCbpRelativePath(projectDir: string, filePath: string): string 
   return relative.replace(/\\/g, "/");
 }
 
-export const unitPattern = /<Unit\b[^>]*\bfilename\s*=\s*["']([^"']+)["'][^>]*>[\s\S]*?<\/Unit>|<Unit\b[^>]*\bfilename\s*=\s*["']([^"']+)["'][^>]*\/>/gi;
+export interface CompilerLinkerEntry {
+  /** Attribute name carrying the value: option | library | directory | */
+  kind: "option" | "library" | "directory";
+  /** Raw attribute value with entities decoded for display. */
+  value: string;
+  /** Offset of the `<Add` tag start in the document text. */
+  offset: number;
+  /** Offset of the first character of the line containing the tag. */
+  lineStart: number;
+  /** Offset of the end of the `<Add ... />` tag. */
+  end: number;
+  /** Indentation (whitespace) prefix of the line containing the tag. */
+  indent: string;
+  /** Newline sequence used by the document at this location. */
+  newline: string;
+}
+
+export interface CompilerLinkerSection {
+  /** true when the options come from the project-level (shared) section. */
+  projectLevel: boolean;
+  /** Target title when section is target-level; undefined for project-level. */
+  target?: string;
+  compiler: CompilerLinkerEntry[];
+  linker: CompilerLinkerEntry[];
+}
+
+const attrValuePattern = (attr: string) =>
+  new RegExp(`\\b${attr}\\s*=\\s*(["'])(.*?)\\1`, "i");
+
+function decodeXmlEntities(value: string): string {
+  return value
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+export function encodeXmlAttr(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function extractAddEntries(sectionText: string, baseOffset: number): CompilerLinkerEntry[] {
+  const entries: CompilerLinkerEntry[] = [];
+  const addPattern = /<Add\b([^>]*?)\/?>/gi;
+  for (const match of sectionText.matchAll(addPattern)) {
+    const attrs = match[1] || "";
+    const matchIndex = match.index ?? 0;
+    const offset = baseOffset + matchIndex;
+    for (const kind of ["option", "library", "directory"] as const) {
+      const attrMatch = attrs.match(attrValuePattern(kind));
+      if (attrMatch) {
+        const lineStart = sectionText.lastIndexOf("\n", matchIndex - 1) + 1;
+        const linePrefix = sectionText.slice(lineStart, matchIndex);
+        const newline = sectionText.includes("\r\n") ? "\r\n" : "\n";
+        entries.push({
+          kind,
+          value: decodeXmlEntities(attrMatch[2]),
+          offset,
+          lineStart: baseOffset + lineStart,
+          end: offset + match[0].length,
+          indent: linePrefix.match(/^[ \t]*/)?.[0] || "",
+          newline,
+        });
+        break;
+      }
+    }
+  }
+  return entries;
+}
+
+interface SectionMatch {
+  start: number;
+  end: number;
+  text: string;
+}
+
+function findSection(
+  text: string,
+  scopePattern: RegExp,
+  section: "Compiler" | "Linker",
+): SectionMatch | undefined {
+  const scope = scopePattern.source ? scopePattern.exec(text) : { index: 0, "0": "" } as RegExpExecArray;
+  if (!scope) {
+    return undefined;
+  }
+  // Match the section's closing tag only when nothing else opens at the same
+  // depth, so `<Compiler>` inside a Target is not confused with a global one.
+  const openPattern = new RegExp(`<${section}\\b`, "gi");
+  const closePattern = new RegExp(`</${section}\\s*>`, "gi");
+  const searchFrom = scope.index + scope[0].length;
+  const openMatch = openPattern.exec(text.slice(searchFrom, searchFrom + 2000));
+  if (!openMatch) {
+    return undefined;
+  }
+  const openOffset = searchFrom + openMatch.index;
+  const closeMatch = closePattern.exec(text.slice(openOffset));
+  if (!closeMatch) {
+    return undefined;
+  }
+  const start = openOffset + openMatch[0].length;
+  const end = openOffset + closeMatch.index;
+  return { start, end, text: text.slice(start, end) };
+}
+
+function findProjectScope(text: string): SectionMatch | undefined {
+  const openMatch = /<Project\b[^>]*>/i.exec(text);
+  if (!openMatch) {
+    return undefined;
+  }
+  const closeOffset = text.lastIndexOf("</Project>");
+  if (closeOffset < 0) {
+    return undefined;
+  }
+  return { start: openMatch.index, end: closeOffset, text };
+}
+
+/**
+ * Extract the `<Add>` entries of project-level and target-level Compiler and
+ * Linker sections, in document order, with enough position info to edit them
+ * in place. Target order follows the `<Target title>` XML order.
+ */
+export function extractCompilerLinkerSections(text: string): CompilerLinkerSection[] {
+  const sections: CompilerLinkerSection[] = [];
+
+  const projectScope = findProjectScope(text);
+  if (!projectScope) {
+    return sections;
+  }
+
+  const projectCompiler = findSection(text, /<Project\b[^>]*>/i, "Compiler");
+  const projectLinker = findSection(text, /<Project\b[^>]*>/i, "Linker");
+  sections.push({
+    projectLevel: true,
+    compiler: projectCompiler ? extractAddEntries(projectCompiler.text, projectCompiler.start) : [],
+    linker: projectLinker ? extractAddEntries(projectLinker.text, projectLinker.start) : [],
+  });
+
+  const targetPattern = /<Target\b[^>]*\btitle\s*=\s*["']([^"']+)["'][^>]*>/gi;
+  for (const targetMatch of text.matchAll(targetPattern)) {
+    const scopeStart = targetMatch.index ?? 0;
+    const closeOffset = text.indexOf("</Target>", scopeStart);
+    const scopeEnd = closeOffset < 0 ? text.length : closeOffset;
+    const scopeText = text.slice(scopeStart, scopeEnd);
+    const targetCompiler = findSection(scopeText, /(?:)/i, "Compiler");
+    const targetLinker = findSection(scopeText, /(?:)/i, "Linker");
+    sections.push({
+      projectLevel: false,
+      target: targetMatch[1],
+      compiler: targetCompiler
+        ? extractAddEntries(targetCompiler.text, scopeStart + targetCompiler.start)
+        : [],
+      linker: targetLinker
+        ? extractAddEntries(targetLinker.text, scopeStart + targetLinker.start)
+        : [],
+    });
+  }
+
+  return sections;
+}
+
+/**
+ * Build the replacement text for a Compiler/Linker section body after adding,
+ * removing, or editing `<Add>` entries. `original` is the section body slice
+ * the caller will replace; entry offsets are absolute document offsets, so the
+ * caller passes `bodyOffset` (the document offset where `original` starts) for
+ * mapping. Untouched bytes keep their original form.
+ */
+export function rewriteSectionBody(
+  original: string,
+  bodyOffset: number,
+  entries: readonly CompilerLinkerEntry[],
+  removed: readonly number[],
+  updated: ReadonlyMap<number, string>,
+  added: readonly { kind: CompilerLinkerEntry["kind"]; value: string }[],
+  indent: string,
+  newline: string,
+): string {
+  const removalSet = new Set(removed);
+  const mapEntry = (entry: CompilerLinkerEntry): CompilerLinkerEntry => ({
+    ...entry,
+    offset: entry.offset - bodyOffset,
+    lineStart: entry.lineStart - bodyOffset,
+    end: entry.end - bodyOffset,
+  });
+  const lines: string[] = [];
+  let cursor = 0;
+  // Each cut swallows the whole line (indent + tag + trailing newline) so a
+  // removed entry leaves no blank line behind and a kept entry is rewritten
+  // from its single canonical form.
+  const cutPoints = entries
+    .map((entry) => {
+      const mapped = mapEntry(entry);
+      let to = mapped.end;
+      if (original.startsWith("\r\n", to)) {
+        to += 2;
+      } else if (original.startsWith("\n", to)) {
+        to += 1;
+      }
+      return {
+        entry: mapped,
+        removed: removalSet.has(entry.offset),
+        from: mapped.lineStart,
+        to,
+      };
+    })
+    .sort((left, right) => left.from - right.from);
+  for (const cut of cutPoints) {
+    if (cut.from < cursor) {
+      continue;
+    }
+    lines.push(original.slice(cursor, cut.from));
+    if (!cut.removed) {
+      const newValue = updated.get(cut.entry.offset + bodyOffset);
+      const attrs = `${cut.entry.kind}="${encodeXmlAttr(newValue ?? cut.entry.value)}"`;
+      lines.push(`${cut.entry.indent}<Add ${attrs} />${cut.entry.newline}`);
+    }
+    cursor = cut.to;
+  }
+  lines.push(original.slice(cursor));
+  let body = lines.join("");
+  if (added.length > 0) {
+    const additionText = added
+      .map((addition) => `${indent}<Add ${addition.kind}="${encodeXmlAttr(addition.value)}" />${newline}`)
+      .join("");
+    // Insert before the closing tag's indentation (the whitespace run after
+    // the last newline) so `</Compiler>`/`</Linker>` keeps its own line and
+    // column, and the new line gets exactly the entry indent.
+    const tail = /\r?\n([ \t]*)$/.exec(body);
+    if (tail) {
+      const split = body.length - tail[1].length;
+      body = body.slice(0, split) + additionText + body.slice(split);
+    } else if (body.trim() === "") {
+      body = newline + additionText + body;
+    } else {
+      body = body + newline + additionText;
+    }
+  }
+  return body;
+}
+
+export const unitPattern =
+  /<Unit\b[^>]*\bfilename\s*=\s*["']([^"']+)["'][^>]*>[\s\S]*?<\/Unit>|<Unit\b[^>]*\bfilename\s*=\s*["']([^"']+)["'][^>]*\/>/gi;
 
 export interface UnitEntry {
   /** filename attribute with backslashes normalized to forward slashes */
