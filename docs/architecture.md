@@ -127,6 +127,7 @@ Target 列表来源：
 - 添加已有文件
 - 移出工程
 - 以文本方式打开
+- Compiler / Linker 配置编辑（按全局与各 Target 分组）
 
 Unit 文件展示和搜索规则：
 
@@ -140,6 +141,15 @@ Unit 文件展示和搜索规则：
 - 文档或 Target 状态刷新时保留目录展开状态
 
 文件操作只修改 `<Unit>` XML 引用，不删除磁盘文件。添加的 Unit 默认对全部 Target 共享。添加/删除通过 `WorkspaceEdit` 进行局部修改，尽量保持原有缩进和换行风格。
+
+Compiler / Linker 配置编辑：
+
+- 编辑器分为“工程文件 / Compiler 配置 / Linker 配置”三个标签页，配置编辑在对应标签页内完成；初始数据随 HTML 内联下发，打开即完整显示，之后通过 `webviewReady` 握手与文档/队列变化事件刷新
+- 解析 Project 级（全局）和各 `<Target>` 内的 `<Compiler>`、`<Linker>` 段，收集 `<Add>` 子节点的 `option`、`library`、`directory` 属性（同一 `<Add>` 按此优先级取第一个出现的属性）
+- 界面在各自标签页内按“全局 + 各 Target”分组展示；没有配置项的组显示提示
+- 支持新增（选择属性类型并输入值后点击“添加”或回车）、编辑值（失焦或回车生效）、删除（✕，清空值后失焦等同删除）；每次修改立即写回对应 XML 段，文档刷新后 UI 重新渲染
+- 写回使用 `WorkspaceEdit` 只替换对应 `<Compiler>`/`<Linker>` 段的内部内容，保留原有缩进与换行风格；新增行插入在闭合标签缩进之前（`</Compiler>`/`</Linker>` 的行与列保持不变），属性值做 XML 转义（`& < > "`）
+- 位置信息（offset）基于文档原文计算，外部修改文档后 webview 会重新接收最新模型，避免基于过期位置写回
 
 添加文件时，与官方 Code::Blocks 一致，`<Unit filename>` 写入相对于 `.cbp` 所在目录的相对路径（工程目录之外的文件使用 `../` 前缀，例如 `../../platform/bsp/bsp_app/ab_command/ab_common.c`）；仅当文件与 `.cbp` 不在同一盘符/根下时才写入绝对路径。新增 `<Unit>` 会复用文件中已有 Unit 的 `<Option>` 属性风格（如 `compilerVar="CC"`），以 `<Unit>...<Option .../></Unit>` 的形式插入。每个新 Unit 按相对路径的大小写不敏感排序，插入到已有 Unit 列表中应在的位置（排在所有 Unit 之后时插入 `</Project>` 前），使 CBP 中的 Unit 顺序与官方 Code::Blocks 保存工程时一样保持有序；批量添加的多个文件也按排序后的顺序逐个插入。
 
@@ -224,5 +234,5 @@ Target 选择和“构建全部 Target”不再作为构建队列行内菜单，
 1. 当前假设使用单个工作区文件夹。
 2. 多 Target 构建按顺序执行，不并行执行。
 3. Unit 首版默认对所有 Target 共享，不编辑 `<Option target="...">` 归属。
-4. 图形编辑器当前主要编辑 Unit 和 Target 选择，Target 编译/链接参数仍建议使用文本编辑器修改。
+4. 图形编辑器的 Compiler/Linker 编辑支持 `option`/`library`/`directory` 属性的增删改；`<Add>` 上的其他属性（如 `compiler`、`target`、`before`、`after`）不解析也不保留，含这些属性的行请使用文本编辑器修改。
 5. `noHeaderInsertion` 需要 clangd v21 或更高版本。

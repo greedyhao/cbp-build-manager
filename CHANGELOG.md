@@ -4,6 +4,15 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.9.0] - 2026-09-14
+
+### Added
+- 图形编辑器新增 Compiler / Linker 配置编辑：以“Compiler 配置”/“Linker 配置”标签页按 Target（及全局 Project 级）查看和修改 `<Compiler>`、`<Linker>` 下的 `<Add>` 配置项，支持 `option`（命令行选项）、`library`（链接库）、`directory`（搜索目录）三种属性的即时增删改（无需保存按钮），写回时保留原有缩进与换行风格，`</Compiler>`/`</Linker>` 位置不变，属性值做 XML 转义
+
+### Changed
+- 图形编辑器改为“工程文件 / Compiler 配置 / Linker 配置”三个标签页布局，打开即显示全部内容（不再需要构建一次后才出现配置）
+- 依赖升级（pnpm 12.4.1、eslint 10、typescript-eslint 8.70、esbuild 0.27.7、vsce 3.9.2、iconv-lite 0.7.3）；`@types/vscode` 锁定为 `~1.80.0`，`engines.vscode` 相应提升至 `^1.80.0`（1.80 起才有复选框 API 的类型定义，且避免 lockfile 重解析导致版本漂移）
+
 ## [1.8.1] - 2026-08-31
 
 ### Fixed
