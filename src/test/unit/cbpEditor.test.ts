@@ -248,6 +248,35 @@ suite("extractCompilerLinkerSections", () => {
     assert.strictEqual(first.newline, "\r\n");
     assert.strictEqual(crlf.slice(first.offset, first.end), '<Add option="-Wall" />');
   });
+
+  test("finds the global section even when a long target block precedes it", () => {
+    // Mirrors real SDK projects: <Target> with a long <Linker> appears before
+    // the project-level <Compiler>, pushing it beyond a naive fixed window.
+    const longLibs = Array.from({ length: 60 }, (_, i) => `\t\t\t\t<Add library="lib${i}.a" />`).join("\n");
+    const text = [
+      "<CodeBlocks_project_file>",
+      "\t<Project>",
+      "\t\t<Build>",
+      "\t\t\t<Target title=\"Debug\">",
+      "\t\t\t\t<Linker>",
+      longLibs,
+      "\t\t\t\t</Linker>",
+      "\t\t\t</Target>",
+      "\t\t</Build>",
+      "\t\t<Compiler>",
+      "\t\t\t<Add option=\"-Os\" />",
+      "\t\t</Compiler>",
+      "\t</Project>",
+      "</CodeBlocks_project_file>",
+    ].join("\n");
+    const sections = extractCompilerLinkerSections(text);
+    assert.strictEqual(sections.length, 2);
+    assert.strictEqual(sections[0].compiler.length, 1);
+    assert.strictEqual(sections[0].compiler[0].value, "-Os");
+    assert.strictEqual(sections[0].linker.length, 0);
+    assert.strictEqual(sections[1].linker.length, 60);
+    assert.strictEqual(sections[1].compiler.length, 0);
+  });
 });
 
 suite("rewriteSectionBody", () => {

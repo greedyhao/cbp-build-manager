@@ -222,32 +222,33 @@ interface SectionMatch {
   text: string;
 }
 
-function findSection(
-  text: string,
-  scopePattern: RegExp,
-  section: "Compiler" | "Linker",
-): SectionMatch | undefined {
-  const scope = scopePattern.source ? scopePattern.exec(text) : { index: 0, "0": "" } as RegExpExecArray;
-  if (!scope) {
-    return undefined;
+/**
+ * Find the first `<section>...</section>` block after `searchFrom` by walking
+ * open/close tags in document order and tracking nesting depth. Depth
+ * tracking is what keeps a Target-level `<Compiler>` from being picked up as
+ * the project-level one (the previous fixed-size search window broke on
+ * files with many `<Option>`/`<Add>` lines before the global section).
+ */
+function findSectionFrom(text: string, searchFrom: number, section: "Compiler" | "Linker"): SectionMatch | undefined {
+  const tagPattern = new RegExp(`<(/?)${section}\\b[^>]*>`, "gi");
+  tagPattern.lastIndex = searchFrom;
+  let depth = 0;
+  let start = -1;
+  let match: RegExpExecArray | null;
+  while ((match = tagPattern.exec(text))) {
+    if (match[1] === "/") {
+      depth -= 1;
+      if (depth === 0) {
+        return { start, end: match.index, text: text.slice(start, match.index) };
+      }
+    } else {
+      depth += 1;
+      if (depth === 1) {
+        start = match.index + match[0].length;
+      }
+    }
   }
-  // Match the section's closing tag only when nothing else opens at the same
-  // depth, so `<Compiler>` inside a Target is not confused with a global one.
-  const openPattern = new RegExp(`<${section}\\b`, "gi");
-  const closePattern = new RegExp(`</${section}\\s*>`, "gi");
-  const searchFrom = scope.index + scope[0].length;
-  const openMatch = openPattern.exec(text.slice(searchFrom, searchFrom + 2000));
-  if (!openMatch) {
-    return undefined;
-  }
-  const openOffset = searchFrom + openMatch.index;
-  const closeMatch = closePattern.exec(text.slice(openOffset));
-  if (!closeMatch) {
-    return undefined;
-  }
-  const start = openOffset + openMatch[0].length;
-  const end = openOffset + closeMatch.index;
-  return { start, end, text: text.slice(start, end) };
+  return undefined;
 }
 
 function findProjectScope(text: string): SectionMatch | undefined {
@@ -263,6 +264,22 @@ function findProjectScope(text: string): SectionMatch | undefined {
 }
 
 /**
+ * Collect the [start, end) spans of every `<Target title="...">...</Target>`
+ * block, so project-level section lookups can reject sections that actually
+ * live inside a target.
+ */
+function findTargetSpans(text: string): Array<{ start: number; end: number }> {
+  const spans: Array<{ start: number; end: number }> = [];
+  const targetPattern = /<Target\b[^>]*\btitle\s*=\s*["']([^"']+)["'][^>]*>/gi;
+  for (const targetMatch of text.matchAll(targetPattern)) {
+    const scopeStart = targetMatch.index ?? 0;
+    const closeOffset = text.indexOf("</Target>", scopeStart);
+    spans.push({ start: scopeStart, end: closeOffset < 0 ? text.length : closeOffset });
+  }
+  return spans;
+}
+
+/**
  * Extract the `<Add>` entries of project-level and target-level Compiler and
  * Linker sections, in document order, with enough position info to edit them
  * in place. Target order follows the `<Target title>` XML order.
@@ -275,8 +292,29 @@ export function extractCompilerLinkerSections(text: string): CompilerLinkerSecti
     return sections;
   }
 
-  const projectCompiler = findSection(text, /<Project\b[^>]*>/i, "Compiler");
-  const projectLinker = findSection(text, /<Project\b[^>]*>/i, "Linker");
+  const targetSpans = findTargetSpans(text);
+  const inAnyTarget = (offset: number) =>
+    targetSpans.some((span) => offset >= span.start && offset < span.end);
+
+  const pickProjectSection = (section: "Compiler" | "Linker"): SectionMatch | undefined => {
+    // Walk every candidate block and take the first one that sits directly
+    // under <Project> (not inside a <Target>), so a target-level section
+    // appearing earlier in the file is never mistaken for the global one.
+    let from = projectScope.start + 1;
+    for (;;) {
+      const candidate = findSectionFrom(text, from, section);
+      if (!candidate) {
+        return undefined;
+      }
+      if (!inAnyTarget(candidate.start - 1)) {
+        return candidate;
+      }
+      from = candidate.end + 1;
+    }
+  };
+
+  const projectCompiler = pickProjectSection("Compiler");
+  const projectLinker = pickProjectSection("Linker");
   sections.push({
     projectLevel: true,
     compiler: projectCompiler ? extractAddEntries(projectCompiler.text, projectCompiler.start) : [],
@@ -288,17 +326,18 @@ export function extractCompilerLinkerSections(text: string): CompilerLinkerSecti
     const scopeStart = targetMatch.index ?? 0;
     const closeOffset = text.indexOf("</Target>", scopeStart);
     const scopeEnd = closeOffset < 0 ? text.length : closeOffset;
-    const scopeText = text.slice(scopeStart, scopeEnd);
-    const targetCompiler = findSection(scopeText, /(?:)/i, "Compiler");
-    const targetLinker = findSection(scopeText, /(?:)/i, "Linker");
+    const inScope = (section: SectionMatch | undefined) =>
+      section && section.start < scopeEnd ? section : undefined;
+    const targetCompiler = inScope(findSectionFrom(text, scopeStart + targetMatch[0].length, "Compiler"));
+    const targetLinker = inScope(findSectionFrom(text, scopeStart + targetMatch[0].length, "Linker"));
     sections.push({
       projectLevel: false,
       target: targetMatch[1],
       compiler: targetCompiler
-        ? extractAddEntries(targetCompiler.text, scopeStart + targetCompiler.start)
+        ? extractAddEntries(targetCompiler.text, targetCompiler.start)
         : [],
       linker: targetLinker
-        ? extractAddEntries(targetLinker.text, scopeStart + targetLinker.start)
+        ? extractAddEntries(targetLinker.text, targetLinker.start)
         : [],
     });
   }
