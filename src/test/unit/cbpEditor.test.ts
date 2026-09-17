@@ -277,6 +277,40 @@ suite("extractCompilerLinkerSections", () => {
     assert.strictEqual(sections[1].linker.length, 60);
     assert.strictEqual(sections[1].compiler.length, 0);
   });
+
+  test("section spans point at the body of the matching scope, not the first match", () => {
+    // Regression: with Target(Linker) before the global Compiler/Linker, the
+    // write-back used to locate "the first <Linker> after <Project>" and hit
+    // the TARGET's section instead of the global one. The spans returned by
+    // extraction must point at the scoped section bodies.
+    const longLibs = Array.from({ length: 30 }, (_, i) => `\t\t\t\t\t<Add library="lib${i}.a" />`).join("\n");
+    const text = [
+      "<CodeBlocks_project_file>",
+      "\t<Project>",
+      "\t\t<Build>",
+      "\t\t\t<Target title=\"Debug\">",
+      "\t\t\t\t<Linker>",
+      longLibs,
+      "\t\t\t\t</Linker>",
+      "\t\t\t</Target>",
+      "\t\t</Build>",
+      "\t\t<Linker>",
+      "\t\t\t<Add option=\"-T ram.o\" />",
+      "\t\t</Linker>",
+      "\t</Project>",
+      "</CodeBlocks_project_file>",
+    ].join("\n");
+    const sections = extractCompilerLinkerSections(text);
+    const globalLinker = sections[0].linkerSpan;
+    const targetLinker = sections[1].linkerSpan;
+    assert.ok(globalLinker && targetLinker);
+    const globalOpenEnd = text.indexOf("<Linker>", text.indexOf("</Target>")) + "<Linker>".length;
+    const targetOpenEnd = text.indexOf("<Linker>", text.indexOf("<Target")) + "<Linker>".length;
+    assert.strictEqual(globalLinker.start, globalOpenEnd);
+    assert.strictEqual(targetLinker.start, targetOpenEnd);
+    assert.strictEqual(text.slice(globalLinker.start, globalLinker.end).includes("lib0.a"), false);
+    assert.strictEqual(text.slice(targetLinker.start, targetLinker.end).includes("lib0.a"), true);
+  });
 });
 
 suite("rewriteSectionBody", () => {

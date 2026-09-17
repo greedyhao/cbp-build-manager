@@ -35,10 +35,6 @@ function escapeHtml(value: string): string {
   })[char] || char);
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 /** Serialize a Compiler/Linker entry for the webview (offsets are positional). */
 function serializeClEntry(entry: CompilerLinkerEntry) {
   return { kind: entry.kind, value: entry.value, offset: entry.offset };
@@ -210,39 +206,23 @@ export class CbpEditorProvider implements vscode.CustomTextEditorProvider {
       vscode.window.showErrorMessage("未找到对应的 Compiler/Linker 配置段");
       return;
     }
-    const sectionName = message.section === "compiler" ? "Compiler" : "Linker";
-    const scopePattern = message.scope === "project"
-      ? /<Project\b[^>]*>/i
-      : new RegExp(`<Target\\b[^>]*\\btitle\\s*=\\s*["']${escapeRegExp(message.target)}["'][^>]*>`, "i");
-    const scopeMatch = scopePattern.exec(text);
-    if (!scopeMatch) {
-      vscode.window.showErrorMessage("未找到对应的配置段位置");
+    // The extraction already located the exact section span for this scope
+    // (project-level sections are scope-aware; a target with no such section
+    // has no span and cannot receive additions).
+    const span = message.section === "compiler" ? match.compilerSpan : match.linkerSpan;
+    if (!span) {
+      vscode.window.showErrorMessage("该层级没有对应的 Compiler/Linker 配置段，请先用文本方式添加段落");
       return;
     }
-    const sectionPattern = new RegExp(
-      `<${sectionName}\\b[^>]*>([\\s\\S]*?)</${sectionName}\\s*>`,
-      "i",
-    );
-    const searchStart = scopeMatch.index;
-    const sectionMatch = sectionPattern.exec(text.slice(searchStart));
-    if (!sectionMatch) {
-      vscode.window.showErrorMessage("未找到对应的 Compiler/Linker 配置段");
-      return;
-    }
-    const tagStart = searchStart + sectionMatch.index;
-    const openTagEnd = tagStart + sectionMatch[0].indexOf(">") + 1;
-    const closeTagStart = tagStart + sectionMatch[0].lastIndexOf("</");
-    const sectionStart = openTagEnd;
-    const sectionEnd = closeTagStart;
     const entries = message.section === "compiler" ? match.compiler : match.linker;
-    const sectionText = text.slice(sectionStart, sectionEnd);
+    const sectionText = text.slice(span.start, span.end);
     const newline = sectionText.includes("\r\n") ? "\r\n" : text.includes("\r\n") ? "\r\n" : "\n";
     const anyEntry = entries[0];
     const indentMatch = sectionText.match(/\r?\n([ \t]*)<Add\b/i);
     const indent = indentMatch?.[1] || anyEntry?.indent || "        ";
     const body = rewriteSectionBody(
       sectionText,
-      sectionStart,
+      span.start,
       entries,
       message.removed,
       new Map(Object.entries(message.updated).map(([key, value]) => [Number(key), value])),
@@ -253,7 +233,7 @@ export class CbpEditorProvider implements vscode.CustomTextEditorProvider {
     const edit = new vscode.WorkspaceEdit();
     edit.replace(
       document.uri,
-      new vscode.Range(document.positionAt(sectionStart), document.positionAt(sectionEnd)),
+      new vscode.Range(document.positionAt(span.start), document.positionAt(span.end)),
       body,
     );
     await vscode.workspace.applyEdit(edit);

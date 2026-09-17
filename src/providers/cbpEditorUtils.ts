@@ -164,6 +164,16 @@ export interface CompilerLinkerSection {
   target?: string;
   compiler: CompilerLinkerEntry[];
   linker: CompilerLinkerEntry[];
+  /** Document span of this section kind's body, when that section exists. */
+  compilerSpan?: SectionSpan;
+  linkerSpan?: SectionSpan;
+}
+
+export interface SectionSpan {
+  /** Offset just after the opening tag. */
+  start: number;
+  /** Offset of the closing tag's `<`. */
+  end: number;
 }
 
 const attrValuePattern = (attr: string) =>
@@ -319,6 +329,8 @@ export function extractCompilerLinkerSections(text: string): CompilerLinkerSecti
     projectLevel: true,
     compiler: projectCompiler ? extractAddEntries(projectCompiler.text, projectCompiler.start) : [],
     linker: projectLinker ? extractAddEntries(projectLinker.text, projectLinker.start) : [],
+    compilerSpan: projectCompiler ? { start: projectCompiler.start, end: projectCompiler.end } : undefined,
+    linkerSpan: projectLinker ? { start: projectLinker.start, end: projectLinker.end } : undefined,
   });
 
   const targetPattern = /<Target\b[^>]*\btitle\s*=\s*["']([^"']+)["'][^>]*>/gi;
@@ -339,6 +351,8 @@ export function extractCompilerLinkerSections(text: string): CompilerLinkerSecti
       linker: targetLinker
         ? extractAddEntries(targetLinker.text, targetLinker.start)
         : [],
+      compilerSpan: targetCompiler ? { start: targetCompiler.start, end: targetCompiler.end } : undefined,
+      linkerSpan: targetLinker ? { start: targetLinker.start, end: targetLinker.end } : undefined,
     });
   }
 
