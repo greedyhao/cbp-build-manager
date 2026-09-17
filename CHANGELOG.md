@@ -4,6 +4,11 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.9.3] - 2026-09-14
+
+### Fixed
+- 修复给全局 Compiler/Linker 添加配置实际写入 Target 段的问题：写回时重新用"`<Project>` 后第一个同名段"的正则定位，会命中 Target 内的同名段。现在写回直接复用解析阶段的作用域感知段位置（span），与显示条目一一对应
+
 ## [1.9.2] - 2026-09-14
 
 ### Fixed
