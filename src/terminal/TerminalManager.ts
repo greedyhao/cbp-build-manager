@@ -210,6 +210,8 @@ export function runCommandInDirectory(
       }
 
       spawnCmd = "cmd.exe";
+      // 整体作为单个 verbatim 参数传给 /c：命令串自带外层引号时
+      // cmd 会按引号规则剥掉后执行，内部带引号的参数（如含空格路径）保持原样
       spawnArgs = ["/d", "/c", actualCmd];
 
       spawnOptions.shell = false;

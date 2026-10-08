@@ -7,6 +7,7 @@ import {
   runCommandInDirectory,
 } from "../terminal/TerminalManager";
 import { mergeCompileCommandsFiles } from "./index";
+import { quoteCmdArg } from "../utils";
 
 interface BuildConfig {
   cbp2clangPath: string;
@@ -199,10 +200,12 @@ export class BuildService {
     const workspacePath =
       vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ||
       path.dirname(projectFsPath);
+    // 路径可能含空格（如 "xxx (3)\app.cbp"），必须加引号，
+    // 否则 cmd.exe 会在空格处把参数拆开
     let convertCommand = cfg.convertCommandTemplate
-      .replace("{cbp2clang}", cfg.cbp2clangPath)
-      .replace("{cbpFile}", projectFsPath)
-      .replace("{compileCommands}", workspacePath)
+      .replace("{cbp2clang}", quoteCmdArg(cfg.cbp2clangPath))
+      .replace("{cbpFile}", quoteCmdArg(projectFsPath))
+      .replace("{compileCommands}", quoteCmdArg(workspacePath))
       .replace("{target}", `--target ${target}`);
 
     // 兼容未包含 {target} 的旧模板：追加 --target，避免升级后仍构建首 Target
@@ -211,7 +214,7 @@ export class BuildService {
     }
 
     if (cfg.ninjaPath) {
-      convertCommand += ` --ninja "${cfg.ninjaPath}"`;
+      convertCommand += ` --ninja ${quoteCmdArg(cfg.ninjaPath)}`;
     }
     if (cfg.noHeaderInsertion) {
       convertCommand += ` --no-header-insertion`;
@@ -287,7 +290,7 @@ export class BuildService {
 
     terminal.write(`\x1b[32m[清理] 执行 ninja -t clean...\x1b[0m\n`);
     const ninjaCommand = cfg.ninjaPath
-      ? `${cfg.ninjaPath} -t clean`
+      ? `${quoteCmdArg(cfg.ninjaPath)} -t clean`
       : `ninja -t clean`;
     await runCommandInDirectory(ninjaCommand, projectDir);
   }

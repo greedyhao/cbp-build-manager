@@ -13,7 +13,7 @@
 - **拖放操作**：在构建队列中拖动来控制构建顺序
 - **cbp2clangd 版本检查**：自动检查 cbp2clangd 版本，确保使用兼容版本
 - **Ninja 路径配置**：支持自动检查和更新 Ninja 路径
-- **可自定义命令**：配置 cbp2clangd 路径和构建脚本
+- **可自定义命令**：配置 cbp2clangd 路径和构建脚本，路径含空格时自动加引号
 - **构建输出**：使用 Pseudoterminal 在终端中显示日志，支持 ANSI 控制符和彩色输出
 - **队列持久化**：构建队列自动保存到项目文件夹的 `.cbp-build/queue.json`，重启 VS Code 后自动恢复队列顺序和勾选状态
 - **Target 构建**：单 Target 模式按工程当前 Target 构建；启用“构建全部 Target”后按 CBP XML 中的顺序逐个构建，日志以 `[工程][Target]` 标识
@@ -145,9 +145,9 @@ compilers:
 | 设置项 | 默认值 | 描述 |
 |--------|--------|------|
 | `cbpBuildManager.cbp2clangPath` | `cbp2clangd` | cbp2clangd 可执行文件的路径，可从 [GitHub](https://github.com/greedyhao/cbp2clangd) 下载 |
-| `cbpBuildManager.convertCommand` | `{cbp2clang} {cbpFile} {compileCommands} {target} -l ld` | 转换命令模板；`{target}` 展开为 `--target <name>`，未配置该占位符的旧模板会自动追加 `--target` |
+| `cbpBuildManager.convertCommand` | `{cbp2clang} {cbpFile} {compileCommands} {target} -l ld` | 转换命令模板；`{target}` 展开为 `--target <name>`，未配置该占位符的旧模板会自动追加 `--target`。所有路径变量展开时会自动加引号，支持含空格的路径 |
 | `cbpBuildManager.buildCommand` | `./build.bat` | 运行构建脚本的命令 |
-| `cbpBuildManager.ninjaPath` | `""` | ninja 可执行文件的路径 |
+| `cbpBuildManager.ninjaPath` | `""` | ninja 可执行文件的路径，含空格时同样会自动加引号 |
 | `cbpBuildManager.noHeaderInsertion` | `true`（manifest 默认值） | 禁止 clangd 在补全代码时插入头文件（需要 clangd v21+） |
 | `cbpBuildManager.debug` | `false` | 启用调试模式，显示详细的调试信息 |
 | `cbpBuildManager.stopOnFailure` | `true`（manifest 默认值） | 编译失败时停止后续项目/Target 的编译 |

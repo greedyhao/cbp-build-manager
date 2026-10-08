@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as cp from "child_process";
 import { CbpProjectItem } from "../models/items";
-import { decodeBuffer } from "../utils";
+import { decodeBuffer, quoteCmdArg } from "../utils";
 
 /**
  * 检查 cbp2clangd 是否支持 merge-compile-commands 命令
@@ -21,9 +21,12 @@ export async function checkMergeCommandSupport(
     const child = cp.spawn(
       process.platform === "win32" ? "cmd.exe" : cbp2clangPath,
       process.platform === "win32"
-        ? ["/c", `${cbp2clangPath} --help`]
+        ? ["/d", "/c", `"${quoteCmdArg(cbp2clangPath)} --help"`]
         : ["--help"],
-      options,
+      {
+        ...options,
+        windowsVerbatimArguments: process.platform === "win32",
+      },
     );
 
     let output = "";
@@ -155,10 +158,23 @@ export async function mergeCompileCommands(
       error?: string;
       stdout?: string;
     }>((resolve, reject) => {
-      const child = cp.spawn(cbp2clangPath, mergeArgs, {
-        windowsHide: true,
-        shell: true,
-      });
+      // shell: true 时 Node 会把 args 拼接成一行命令，路径含空格会拆参。
+      // 每个参数先加引号，整体作为单个 verbatim 参数传给 /c，
+      // cmd 剥掉最外层引号后执行，内部参数引号保持原样
+      const quotedCmd = `"${
+        quoteCmdArg(cbp2clangPath) + " " + mergeArgs.map(quoteCmdArg).join(" ")
+      }"`;
+      const child = cp.spawn(
+        process.platform === "win32" ? "cmd.exe" : cbp2clangPath,
+        process.platform === "win32"
+          ? ["/d", "/c", quotedCmd]
+          : [cbp2clangPath, ...mergeArgs],
+        {
+          windowsHide: true,
+          shell: process.platform !== "win32",
+          windowsVerbatimArguments: process.platform === "win32",
+        },
+      );
 
       let stderr = "";
       let stdout = "";
@@ -315,10 +331,23 @@ export async function mergeCompileCommandsFiles(
       error?: string;
       stdout?: string;
     }>((resolve, reject) => {
-      const child = cp.spawn(cbp2clangPath, mergeArgs, {
-        windowsHide: true,
-        shell: true,
-      });
+      // shell: true 时 Node 会把 args 拼接成一行命令，路径含空格会拆参。
+      // 每个参数先加引号，整体作为单个 verbatim 参数传给 /c，
+      // cmd 剥掉最外层引号后执行，内部参数引号保持原样
+      const quotedCmd = `"${
+        quoteCmdArg(cbp2clangPath) + " " + mergeArgs.map(quoteCmdArg).join(" ")
+      }"`;
+      const child = cp.spawn(
+        process.platform === "win32" ? "cmd.exe" : cbp2clangPath,
+        process.platform === "win32"
+          ? ["/d", "/c", quotedCmd]
+          : [cbp2clangPath, ...mergeArgs],
+        {
+          windowsHide: true,
+          shell: process.platform !== "win32",
+          windowsVerbatimArguments: process.platform === "win32",
+        },
+      );
 
       let stderr = "";
       let stdout = "";

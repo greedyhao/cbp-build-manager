@@ -39,7 +39,7 @@ import {
   runCommandInDirectory,
   stopCurrentBuild,
 } from "./terminal/TerminalManager.js";
-import { compareVersions } from "./utils/index.js";
+import { compareVersions, quoteCmdArg } from "./utils/index.js";
 import { mergeCompileCommandsFiles } from "./services/index.js";
 import { CompileCommandsProvider } from "./providers/CompileCommandsProvider.js";
 import { CbpEditorProvider } from "./providers/CbpEditorProvider.js";
@@ -59,8 +59,12 @@ async function checkCbp2clangVersion(cbp2clangPath: string): Promise<string> {
 
     const child = cp.spawn(
       process.platform === "win32" ? "cmd.exe" : cbp2clangPath,
-      process.platform === "win32" ? ["/c", `${cbp2clangPath} -v`] : ["-v"],
-      options,
+      // 整体作为单个 verbatim 参数传给 /c，命令串自带外层引号：
+      // cmd 会剥掉最外层引号后执行，内部带引号的参数（含空格路径）保持原样
+      process.platform === "win32"
+        ? ["/d", "/c", `"${quoteCmdArg(cbp2clangPath)} -v"`]
+        : ["-v"],
+      { ...options, windowsVerbatimArguments: process.platform === "win32" },
     );
 
     if (child.stdout) {

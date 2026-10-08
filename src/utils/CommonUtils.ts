@@ -41,6 +41,15 @@ export function formatOutput(text: string): string {
   return normalized;
 }
 
+// 为 Windows cmd 命令行参数加引号：路径中含有空格时（如 "xxx (3)\yyy"），
+// 不加引号会在空格处被拆成多个参数；已整体带引号或不含空白时保持原样
+export function quoteCmdArg(arg: string): string {
+  if (arg.length >= 2 && arg.startsWith('"') && arg.endsWith('"')) {
+    return arg;
+  }
+  return /\s/.test(arg) ? `"${arg}"` : arg;
+}
+
 // 比较两个版本字符串，返回 true 如果 version1 >= version2
 export function compareVersions(version1: string, version2: string): boolean {
   const v1Parts = version1.split(".").map(Number);
