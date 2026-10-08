@@ -4,6 +4,12 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.9.4] - 2026-09-14
+
+### Fixed
+- 修复链接器报错在诊断汇总里只剩 `ninja: build stopped: subcommand failed.` 的问题：补充收集不带 `error:` 字样的链接器地址空间错误（`cannot move location counter backwards`、section overlap、region overflow、`will not fit in region`）；`ninja: build stopped` 在汇总里已有其他真实报错时不再重复显示，无其他报错时保留兜底提示
+- 修复 `Output\obj\ram.o: cannot move location counter backwards` 这类无行号的目标文件报错无法转成完整路径的问题：`processBuildCommandPath` 扩展名支持扩展到 `.o/.obj/.a/.s/.asm/.lib`，行号改为可选（带行号仍保留 `:454`），并为扩展名增加词边界，避免行号可选后 `.cpp`/`.cab` 等被截断误匹配
+
 ## [1.9.3] - 2026-09-14
 
 ### Fixed

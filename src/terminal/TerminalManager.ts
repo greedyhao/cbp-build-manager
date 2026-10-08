@@ -271,6 +271,14 @@ export function runCommandInDirectory(
               /ld\s+returned\s+\d+\s+exit\s+status/i,
               /cannot\s+find\s+-l/i,
               /LNK\d{4}/i,
+              // 链接器地址空间错误（如 "cannot move location counter
+              // backwards"）不带 "error:" 字样，需单独识别，
+              // 否则只剩 "ninja: build stopped" 让人摸不着头脑
+              /cannot\s+move\s+location\s+counter\s+backwards/i,
+              /overlap|overlaps\s+(with\s+)?section/i,
+              /\bsection\s+.*\bLMA\s+.*\boverlaps\b/i,
+              /region\s+.*\boverflow/i,
+              /will\s+not\s+fit\s+in\s+region/i,
             ];
             const warningPatterns = [
               /:\s*warning:/i,
@@ -288,6 +296,20 @@ export function runCommandInDirectory(
               !isError && warningPatterns.some((p) => p.test(processedLine));
 
             if (isError) {
+              // "ninja: build stopped: subcommand failed." 只是构建中止的
+              // 提示，真正的报错已经逐行收集过；若不去重，汇总里满屏都是
+              // 这句废话。已在汇总中收集过真实报错时跳过它，仍保留兜底：
+              // 没有任何其他报错时照常显示，至少提示去上方滚动日志找原因
+              const isNinjaStopped =
+                /ninja:\s*build\s+stopped/i.test(processedLine);
+              if (
+                isNinjaStopped &&
+                collector.errors.some(
+                  (e) => !/ninja:\s*build\s+stopped/i.test(e),
+                )
+              ) {
+                return;
+              }
               collector.errors.push(processedLine);
             } else if (isWarning) {
               collector.warnings.push(processedLine);

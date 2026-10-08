@@ -97,9 +97,11 @@ export class OutputLineBuffer {
 
 // 处理构建命令中的路径
 export function processBuildCommandPath(line: string, cwd: string): string {
-  // 支持源文件和头文件
-  // 注意：这里加了 \\. 确保后缀名前的点被正确转义
-  const fileExtensionPattern = "\\.(c|cpp|cc|cxx|h|hpp|hh|hxx)";
+  // 支持源文件、头文件和目标文件（链接器报错会指向 .o/.obj/.a）
+  // 注意：这里加了 \\. 确保后缀名前的点被正确转义；扩展名用 (?:...)
+  // 非捕获组，避免占用 replace 回调的参数位
+  const fileExtensionPattern =
+    "\\.(?:c|cpp|cc|cxx|h|hpp|hh|hxx|s|S|asm|o|obj|a|lib)";
 
   // 修改点：
   // 1. 在字符集 [] 中增加了 \\. 以支持相对路径中的点 (如 ../)
@@ -108,16 +110,21 @@ export function processBuildCommandPath(line: string, cwd: string): string {
   //    我们主要扩充允许的字符：字母、数字、下划线、减号、点、斜杠、反斜杠
   const validPathChars = "[a-zA-Z0-9_\\-\\.\\/\\\\]";
 
-  // 正则表达式：匹配文件路径 + 行号
-  // 匹配模式：[路径] : [行号] [分隔符]
+  // 正则表达式：匹配文件路径 + 可选行号
+  // 匹配模式：[路径] [: 行号]
+  // 1. 行号设为可选：链接器的错误形如 "Output\obj\ram.o: cannot move
+  //    location counter backwards"，没有行号，也要转换出完整路径方便跳转
+  // 2. 不再强制要求行号后跟 ":"：部分链接器输出 "ram.o:454 cannot move
+  //    ..."，行号后直接是空格；行号后的冒号留在未匹配的剩余文本里，
+  //    替换结果不变
   const filePathPattern = new RegExp(
-    `(${validPathChars}+${fileExtensionPattern}):(\\d+)(:|,)`,
+    `(${validPathChars}+${fileExtensionPattern})(?::(\\d+))?`,
     "g",
   );
 
   return line.replace(
     filePathPattern,
-    (match, relPath, ext, lineNum, separator) => {
+    (match, relPath: string, lineNum?: string) => {
       try {
         const pathModule = require("path");
 
@@ -135,7 +142,10 @@ export function processBuildCommandPath(line: string, cwd: string): string {
           fullPath = pathModule.resolve(cwd, relPath);
         }
 
-        return `${fullPath}:${lineNum}${separator}`;
+        // 有行号保留行号，没有行号只输出完整路径，保持 VS Code 可点击
+        return lineNum !== undefined
+          ? `${fullPath}:${lineNum}`
+          : fullPath;
       } catch (e) {
         return match; // 如果解析失败，返回原样
       }

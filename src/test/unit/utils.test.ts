@@ -215,6 +215,44 @@ suite("Utils Test Suite", () => {
     assert.ok(!result.includes("/home/user/project/usr/include"));
   });
 
+  test("processBuildCommandPath: object file without line number gets full path", () => {
+    // 链接器报错没有行号，如 ram.o 位置计数器回退错误
+    const line =
+      "Output\\obj\\ram.o: cannot move location counter backwards (from 00097000 to 00078000)";
+    const result = processBuildCommandPath(line, baseDir);
+    const expected = path.normalize(path.join(baseDir, "Output/obj/ram.o"));
+    assert.ok(
+      result.includes(expected),
+      `Expected "${result}" to include "${expected}"`,
+    );
+    // 没有行号时不应该拼出 "路径:undefined" 之类的内容
+    assert.ok(
+      !result.includes("undefined"),
+      `Expected "${result}" not to contain "undefined"`,
+    );
+  });
+
+  test("processBuildCommandPath: object file keeps error message tail", () => {
+    const line = "Output\\obj\\ram.o: cannot move location counter backwards";
+    const result = processBuildCommandPath(line, baseDir);
+    assert.ok(
+      result.includes("cannot move location counter backwards"),
+      `Expected "${result}" to keep the error message`,
+    );
+  });
+
+  test("processBuildCommandPath: object file with line number still works", () => {
+    const line = "Output\\obj\\ram.o:454 cannot move location counter backwards";
+    const result = processBuildCommandPath(line, baseDir);
+    const expected = path.normalize(
+      path.join(baseDir, "Output/obj/ram.o:454"),
+    );
+    assert.ok(
+      result.includes(expected),
+      `Expected "${result}" to include "${expected}"`,
+    );
+  });
+
   // ==================== parseNinjaProgress ====================
 
   test("parseNinjaProgress: progress line", () => {
