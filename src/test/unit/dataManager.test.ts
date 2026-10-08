@@ -355,4 +355,64 @@ suite("DataManager Test Suite", () => {
     manager3.reloadState();
     assert.strictEqual(manager3.getTargetSelection(cbpFile), "NewOnly");
   });
+
+  // ==================== queue lock ====================
+
+  test("queueLock: rejects queue modifications while locked", () => {
+    const manager = new CbpDataManager();
+    const p1 = makePath("lock1.cbp");
+    const p2 = makePath("lock2.cbp");
+    manager.setAllDetectedProjects([p1, p2]);
+    manager.addToQueue([p1]);
+
+    // 未锁定时可以正常修改
+    assert.strictEqual(manager.isQueueLocked(), false);
+    manager.addToQueue([p2]);
+    assert.strictEqual(manager.getQueueItems().length, 2);
+
+    // 锁定后拒绝增删、排序、勾选
+    manager.lockQueue();
+    assert.strictEqual(manager.isQueueLocked(), true);
+
+    manager.addToQueue([makePath("lock3.cbp")]);
+    assert.strictEqual(manager.getQueueItems().length, 2);
+
+    manager.removeFromQueue([manager.getQueueItems()[0]]);
+    assert.strictEqual(manager.getQueueItems().length, 2);
+
+    const orderBefore = manager.getQueueItems().map((i) => i.fsPath);
+    manager.moveQueueItem([manager.getQueueItems()[0]], undefined);
+    assert.deepStrictEqual(
+      manager.getQueueItems().map((i) => i.fsPath),
+      orderBefore,
+    );
+
+    const item = manager.getQueueItems()[0];
+    manager.updateCheckState(item, vscode.TreeItemCheckboxState.Unchecked);
+    assert.strictEqual(item.checkboxState, vscode.TreeItemCheckboxState.Checked);
+
+    manager.setTargetSelection(p1, "Other");
+    manager.setBuildAllTargets(p1, true);
+    assert.strictEqual(manager.getTargetSelection(p1), undefined);
+    assert.strictEqual(manager.getBuildAllTargets(p1), false);
+
+    manager.updateCompileCommandsCheckState(
+      new (require("../../models/CompileCommandsItem").CompileCommandsItem)(
+        "rel/cc.json",
+        makePath("cc.json"),
+        false,
+      ),
+      vscode.TreeItemCheckboxState.Checked,
+    );
+    assert.strictEqual(
+      manager.getCompileCommandsItems().length,
+      0,
+    );
+
+    // 解锁后恢复可修改
+    manager.unlockQueue();
+    assert.strictEqual(manager.isQueueLocked(), false);
+    manager.addToQueue([makePath("lock4.cbp")]);
+    assert.strictEqual(manager.getQueueItems().length, 3);
+  });
 });

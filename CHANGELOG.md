@@ -6,6 +6,9 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [1.9.5] - 2026-10-08
 
+### Added
+- 构建进行中锁定构建队列：构建/重新编译/清理执行期间，拒绝一切队列修改（添加/移除项目、拖拽排序、勾选状态、切换 Target 与"全部 Target"模式、编译数据库勾选与排序），并在界面层面隐藏或拦截对应入口，避免构建过程中队列与实际执行内容不一致
+
 ### Fixed
 - 修复工作路径含空格（如 `xxx (3)\app.cbp`）时转换命令报错的问题：所有传递给 cbp2clangd / ninja 的路径参数（`cbp2clangPath`、`cbpFile`、`compileCommands`、`ninjaPath`）统一经 `quoteCmdArg` 加引号，避免 `cmd.exe` 在空格处把参数拆开
 - 修复 Windows 上 `cmd.exe` spawn 传参丢引号的问题：命令串整体作为单个 verbatim 参数传给 `/c`，由 cmd 剥掉最外层引号后执行，内部带引号的参数原样保留；cbp2clangd 版本检查（`-v`）、`--help` 探测及 compile_commands.json 合并命令同步修正

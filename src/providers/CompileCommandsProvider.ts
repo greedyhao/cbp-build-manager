@@ -54,6 +54,12 @@ export class CompileCommandsProvider
       return;
     }
 
+    // 构建进行中拒绝重排（合并队列与构建队列共用锁状态）
+    if (this.manager.isQueueLocked()) {
+      vscode.window.showInformationMessage("构建进行中，暂不能修改编译数据库。");
+      return;
+    }
+
     const sourcePaths: string[] = transferItem.value;
     const items = this.manager.getCompileCommandsItems();
     const sourceItems = items.filter((p) => sourcePaths.includes(p.fsPath));

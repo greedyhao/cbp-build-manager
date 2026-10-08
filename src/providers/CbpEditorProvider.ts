@@ -126,10 +126,18 @@ export class CbpEditorProvider implements vscode.CustomTextEditorProvider {
         return;
       }
       if (message.command === "selectTarget" && typeof message.target === "string") {
+        if (this.manager.isQueueLocked()) {
+          void vscode.window.showInformationMessage("构建进行中，暂不能切换 Target。");
+          return;
+        }
         this.manager.setTargetSelection(document.uri.fsPath, message.target);
         return;
       }
       if (message.command === "toggleBuildAll" && typeof message.enabled === "boolean") {
+        if (this.manager.isQueueLocked()) {
+          void vscode.window.showInformationMessage("构建进行中，暂不能修改 Target 构建模式。");
+          return;
+        }
         this.manager.setBuildAllTargets(document.uri.fsPath, message.enabled);
       }
       if (message.command === "clUpdate" && this.isValidClUpdate(message)) {

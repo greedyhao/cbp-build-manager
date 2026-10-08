@@ -151,7 +151,7 @@
         {
           "command": "cbp-build-manager.addToBuild",
           "group": "navigation@2",
-          "when": "view == cbpProjectLibrary"
+          "when": "view == cbpProjectLibrary && !cbpBuildManager.isBuilding"
         },
         {
           "command": "cbp-build-manager.filterByChip",
@@ -173,7 +173,7 @@
         {
           "command": "cbp-build-manager.removeFromBuild",
           "group": "inline",
-          "when": "view == cbpBuildQueue && viewItem == cbpProject"
+          "when": "view == cbpBuildQueue && viewItem == cbpProject && !cbpBuildManager.isBuilding"
         }
       ]
     },

@@ -26,6 +26,9 @@ export class CbpDataManager {
   // 芯片系列筛选
   private chipFilter: string | null = null; // null 表示显示全部
 
+  // 构建进行中锁定队列，拒绝一切修改（增删、排序、勾选、切换 Target）
+  private queueLocked = false;
+
   // 持久化文件路径
   private stateFilePath: string | null = null;
 
@@ -33,6 +36,22 @@ export class CbpDataManager {
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   constructor() {}
+
+  // --- 构建队列锁 ---
+
+  // 构建/重新编译/清理开始时调用：锁定构建队列，拒绝修改
+  lockQueue() {
+    this.queueLocked = true;
+  }
+
+  // 构建流程结束后调用：解锁构建队列
+  unlockQueue() {
+    this.queueLocked = false;
+  }
+
+  isQueueLocked(): boolean {
+    return this.queueLocked;
+  }
 
   setContext(context: vscode.ExtensionContext) {
     // 设置工作区状态文件路径
@@ -225,6 +244,9 @@ export class CbpDataManager {
     item: CompileCommandsItem,
     state: vscode.TreeItemCheckboxState,
   ) {
+    if (this.queueLocked) {
+      return;
+    }
     item.checkboxState = state;
     item.isChecked = state === vscode.TreeItemCheckboxState.Checked;
     this.compileCommandsCheckState[item.fsPath] = item.isChecked;
@@ -236,6 +258,9 @@ export class CbpDataManager {
     sourceItems: CompileCommandsItem[],
     target?: CompileCommandsItem,
   ) {
+    if (this.queueLocked) {
+      return;
+    }
     const pathsToMove = sourceItems.map((s) => s.fsPath);
     // 从顺序列表中移除
     const newOrder = this.compileCommandsOrder.filter(
@@ -325,6 +350,9 @@ export class CbpDataManager {
 
   // 添加到队列
   addToQueue(fsPaths: string[]) {
+    if (this.queueLocked) {
+      return;
+    }
     let changed = false;
     fsPaths.forEach((fsPath) => {
       // 防止重复
@@ -350,6 +378,9 @@ export class CbpDataManager {
 
   // 从队列移除
   removeFromQueue(items: readonly CbpProjectItem[]) {
+    if (this.queueLocked) {
+      return;
+    }
     const pathsToRemove = new Set(items.map((i) => i.fsPath));
     this.buildQueue = this.buildQueue.filter(
       (p) => !pathsToRemove.has(p.fsPath),
@@ -360,6 +391,9 @@ export class CbpDataManager {
 
   // 队列排序 (拖拽支持)
   moveQueueItem(sourceItems: CbpProjectItem[], target?: CbpProjectItem) {
+    if (this.queueLocked) {
+      return;
+    }
     // 提取需要移动的项目
     const itemsToMove = sourceItems.filter((s) =>
       this.buildQueue.some((inQ) => inQ.fsPath === s.fsPath),
@@ -389,6 +423,9 @@ export class CbpDataManager {
 
   // 更新 Checkbox
   updateCheckState(item: CbpProjectItem, state: vscode.TreeItemCheckboxState) {
+    if (this.queueLocked) {
+      return;
+    }
     item.checkboxState = state;
     item.isChecked = state === vscode.TreeItemCheckboxState.Checked;
     this.saveState();
@@ -399,6 +436,9 @@ export class CbpDataManager {
   }
 
   setTargetSelection(fsPath: string, target: string): void {
+    if (this.queueLocked) {
+      return;
+    }
     this.targetSelections[fsPath] = target;
     this.buildQueue = this.buildQueue.map((item) =>
       item.fsPath === fsPath ? this.refreshQueueItem(item) : item,
@@ -412,6 +452,9 @@ export class CbpDataManager {
   }
 
   setBuildAllTargets(fsPath: string, enabled: boolean): void {
+    if (this.queueLocked) {
+      return;
+    }
     this.buildAllTargets[fsPath] = enabled;
     this.buildQueue = this.buildQueue.map((item) =>
       item.fsPath === fsPath ? this.refreshQueueItem(item) : item,

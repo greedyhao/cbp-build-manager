@@ -42,6 +42,10 @@ export class BuildQueueProvider
     dataTransfer: vscode.DataTransfer,
     token: vscode.CancellationToken,
   ): void | Thenable<void> {
+    // 构建进行中忽略拖拽数据，拖拽落下的 handleDrop 会被队列锁拒绝
+    if (this.manager.isQueueLocked()) {
+      return;
+    }
     const itemPaths = source.map((item) => item.fsPath);
     dataTransfer.set(
       "application/vnd.code.tree.cbpBuildQueue",
@@ -58,6 +62,12 @@ export class BuildQueueProvider
       "application/vnd.code.tree.cbpBuildQueue",
     );
     if (!transferItem) {
+      return;
+    }
+
+    // 构建进行中拒绝重排
+    if (this.manager.isQueueLocked()) {
+      vscode.window.showInformationMessage("构建进行中，暂不能修改构建队列。");
       return;
     }
 

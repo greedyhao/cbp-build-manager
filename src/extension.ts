@@ -214,6 +214,13 @@ export function activate(context: vscode.ExtensionContext) {
 
   function setBuildingState(building: boolean) {
     isBuilding = building;
+    // 构建期间锁定构建队列：拒绝增删、排序、勾选、切换 Target 等修改，
+    // 避免构建过程中队列变化导致读取到与实际执行不一致的状态
+    if (building) {
+      manager.lockQueue();
+    } else {
+      manager.unlockQueue();
+    }
     vscode.commands.executeCommand(
       "setContext",
       "cbpBuildManager.isBuilding",
