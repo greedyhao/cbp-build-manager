@@ -72,22 +72,56 @@ export function compareVersions(version1: string, version2: string): boolean {
 
 // --- 辅助类：行缓冲处理器 ---
 // 用于解决流式数据可能将一行日志切断的问题，确保每次 callback 都是完整的一行
+//
+// 换行符：构建工具用三种方式结束一行，三者都要当行结束符处理
+//   \n    普通输出
+//   \r\n  Windows CRLF（可能刚好被数据块从中间切断）
+//   \r    “原地刷新”的进度行，如 build 脚本输出的 xxx.g.bin" successful\r
+// 若只认 \n，\r 结尾的半行会一直留在缓冲区里，直到后面某条毫不相关的
+// 输出带来 \n，两条内容被拼成一行（"xxx.g.bin\" successful" 就是这么粘上
+// 编译器报错的）。
 export class OutputLineBuffer {
   private buffer = "";
+  // 上一块数据以裸 \r 结尾：本块开头的 \n 属于同一个 CRLF，需要吃掉
+  private skipLeadingLf = false;
 
   constructor(private onLine: (line: string) => void) {}
 
   append(chunk: string) {
-    this.buffer += chunk;
-    let index;
-    // 循环提取完整的行
-    while ((index = this.buffer.indexOf("\n")) !== -1) {
-      // 提取一行，去除末尾的回车符
-      const line = this.buffer.substring(0, index).replace(/\r$/, "");
-      this.onLine(line);
-      // 移动缓冲区指针
-      this.buffer = this.buffer.substring(index + 1);
+    let text = chunk;
+    if (this.skipLeadingLf) {
+      this.skipLeadingLf = false;
+      if (text.startsWith("\n")) {
+        text = text.slice(1);
+      }
     }
+    this.buffer += text;
+
+    // lineStart 之后的内容尚未成行，循环结束后要留在缓冲区里
+    let lineStart = 0;
+    let index = 0;
+    while (index < this.buffer.length) {
+      const ch = this.buffer[index];
+      if (ch === "\n") {
+        this.onLine(this.buffer.substring(lineStart, index));
+        index += 1;
+        lineStart = index;
+      } else if (ch === "\r") {
+        this.onLine(this.buffer.substring(lineStart, index));
+        if (index + 1 === this.buffer.length) {
+          // \r 正好是最后一块的最后一个字符，无法判断它是不是 CRLF 的
+          // 前半截：先标记，交给下一块数据（或 flush）确认
+          this.skipLeadingLf = true;
+          index += 1;
+        } else {
+          index += this.buffer[index + 1] === "\n" ? 2 : 1;
+        }
+        lineStart = index;
+      } else {
+        index += 1;
+      }
+    }
+    this.buffer = this.buffer.substring(lineStart);
   }
 
   // 处理流结束后的剩余数据
@@ -96,11 +130,47 @@ export class OutputLineBuffer {
       this.onLine(this.buffer);
       this.buffer = "";
     }
+    this.skipLeadingLf = false;
   }
 
   // Get current buffer state (for testing)
   getBuffer(): string {
     return this.buffer;
+  }
+}
+
+/**
+ * 构建输出的按流分离行缓冲。
+ *
+ * stdout 与 stderr 是两条独立的管道，数据块边界互不相干。共用一个
+ * OutputLineBuffer 时，一条流的半行会被拼到另一条流的半行前面，产出
+ * 一条在两个流里都不存在的“假行”，例如：
+ *     sw a4, s9(a0)g.bin" successful
+ *              ^\Users\...\xcfg.h" successful
+ * 这种假行不仅没法看，还会被当成错误信息收集进诊断汇总。因此每条流
+ * 各持有一个 OutputLineBuffer，只在整行层面交错。
+ */
+export class StreamOutputBuffer {
+  private readonly stdoutBuffer: OutputLineBuffer;
+  private readonly stderrBuffer: OutputLineBuffer;
+
+  constructor(onLine: (line: string) => void) {
+    this.stdoutBuffer = new OutputLineBuffer(onLine);
+    this.stderrBuffer = new OutputLineBuffer(onLine);
+  }
+
+  appendStdout(chunk: string): void {
+    this.stdoutBuffer.append(chunk);
+  }
+
+  appendStderr(chunk: string): void {
+    this.stderrBuffer.append(chunk);
+  }
+
+  // 进程结束后，把两条流残留的半行都吐出来
+  flush(): void {
+    this.stdoutBuffer.flush();
+    this.stderrBuffer.flush();
   }
 }
 

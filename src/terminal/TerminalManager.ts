@@ -4,7 +4,7 @@ import * as path from "path";
 import {
   decodeBuffer,
   formatOutput,
-  OutputLineBuffer,
+  StreamOutputBuffer,
   processBuildCommandPath,
   parseNinjaProgress,
 } from "../utils";
@@ -322,21 +322,24 @@ export function runCommandInDirectory(
         }
       };
 
-      // 使用 OutputLineBuffer 来处理 stdout 和 stderr
-      const lineBuffer = new OutputLineBuffer(handleLineOutput);
+      // stdout / stderr 各自持有一个行缓冲：两条管道的分块边界互不相干，
+      // 共用一个缓冲时 A 流的半行会被拼到 B 流的半行前面，产出一条两个流
+      // 里都不存在的“假行”（如 `    sw a4, s9(a0)g.bin" successful`）。
+      const streamBuffer = new StreamOutputBuffer(handleLineOutput);
 
       if (child.stdout) {
         child.stdout.on("data", (data: Buffer) => {
-          lineBuffer.append(decodeBuffer(data));
+          streamBuffer.appendStdout(decodeBuffer(data));
         });
       }
 
       if (child.stderr) {
         child.stderr.on("data", (data: Buffer) => {
-          // stderr 也走同样的 buffer 逻辑，防止切断
+          // stderr 走同样的分行逻辑，防止一行被数据块切断；
+          // 但必须与 stdout 分开缓冲（见上）。
           // 通常 Ninja 的错误信息也是正常文本，不需要特殊红色处理，
           // 因为 Clang/GCC 自身带有颜色代码。
-          lineBuffer.append(decodeBuffer(data));
+          streamBuffer.appendStderr(decodeBuffer(data));
         });
       }
 
@@ -348,8 +351,8 @@ export function runCommandInDirectory(
         const wasStopped = stopRequested;
         stopRequested = false;
 
-        // 确保缓冲区最后的内容被打印
-        lineBuffer.flush();
+        // 确保两条流缓冲区最后的内容都被打印
+        streamBuffer.flush();
         // 最后换个行，结束进度条状态
         pty.write("\r\n");
 

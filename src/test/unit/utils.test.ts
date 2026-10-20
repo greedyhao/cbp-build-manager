@@ -140,6 +140,37 @@ suite("Utils Test Suite", () => {
     assert.strictEqual(lines[0], "line1");
   });
 
+  test("OutputLineBuffer: bare \\r ends a line immediately", () => {
+    const lines: string[] = [];
+    const buffer = new OutputLineBuffer((line) => lines.push(line));
+
+    // 构建脚本用 \r 原地刷新进度（如 xxx.g.bin" successful\r），
+    // 不能等到后面某条无关输出带来 \n 才成行
+    buffer.append('xxx.g.bin" successful\r');
+    assert.strictEqual(lines.length, 1);
+    assert.strictEqual(lines[0], 'xxx.g.bin" successful');
+    assert.strictEqual(buffer.getBuffer(), "");
+  });
+
+  test("OutputLineBuffer: bare \\r splits within one chunk", () => {
+    const lines: string[] = [];
+    const buffer = new OutputLineBuffer((line) => lines.push(line));
+
+    buffer.append("progress 50%\rprogress 100%\n");
+    assert.deepStrictEqual(lines, ["progress 50%", "progress 100%"]);
+  });
+
+  test("OutputLineBuffer: CRLF split across chunks emits no empty line", () => {
+    const lines: string[] = [];
+    const buffer = new OutputLineBuffer((line) => lines.push(line));
+
+    buffer.append("a\r");
+    assert.deepStrictEqual(lines, ["a"]);
+    buffer.append("\nb\n");
+    assert.deepStrictEqual(lines, ["a", "b"]);
+    assert.strictEqual(buffer.getBuffer(), "");
+  });
+
   // ==================== processBuildCommandPath ====================
 
   test("processBuildCommandPath: basic relative path conversion", () => {
