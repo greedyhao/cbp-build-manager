@@ -13,7 +13,7 @@ Converts .cbp projects to compile_commands.json via [cbp2clangd](https://github.
 - **Package manager**: pnpm
 - **Formatter**: Prettier (`.prettierrc`)
 - **Linter**: ESLint (`eslint.config.mjs`)
-- **VS Code SDK**: `@types/vscode` ^1.79.0
+- **VS Code SDK**: `@types/vscode` ~1.80.0
 
 ## Key Files & Directories
 
@@ -24,7 +24,7 @@ Converts .cbp projects to compile_commands.json via [cbp2clangd](https://github.
 | `src/providers/` | Tree view data providers (BuildQueue, ProjectLibrary, CompileCommands) |
 | `src/terminal/TerminalManager.ts` | Pseudoterminal management for build output |
 | `src/models/` | Data models (CbpProjectItem, etc.) |
-| `src/utils/` | Utilities (encoding, formatting, version comparison) |
+| `src/utils/` | Utilities (encoding, streaming line buffers, formatting, version comparison) |
 | `dist/extension.js` | Compiled output (bundled by esbuild) |
 | `package.json` | Extension manifest & scripts |
 
@@ -72,5 +72,7 @@ pnpm run test         # Run all tests
 - `CbpDataManager` is the central service — manages project scanning, queue state, and compile commands
 - Tree views use VS Code's `TreeDataProvider` with checkbox support
 - Build output uses Pseudoterminal with ANSI color support
+- stdout and stderr must each own a line buffer (`StreamOutputBuffer` in `src/utils/CommonUtils.ts`). Feeding both streams into one buffer glues their half-lines into lines that exist in neither stream, which is both unreadable and wrong (the caret column of a diagnostic no longer lines up)
+- A line ends on `\r`, `\n` or `\r\n`: build scripts emit bare-`\r` progress text (e.g. `"app.g.bin" successful`), and compiler diagnostics write the trailing `^` caret line without a newline
 - Queue persistence: `.cbp-build/queue.json` in the workspace root
 - Extension kind: workspace (runs in workspace extension host)

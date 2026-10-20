@@ -4,6 +4,15 @@ All notable changes to the "cbp-build-manager" extension will be documented in t
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.9.6] - 2026-10-20
+
+### Added
+- 新增 `cbpBuildManager.maxParallelJobs`（默认 8，最小 1）限制 Ninja 并行编译任务数：构建命令是 `build.bat` 时，扩展会在执行前改写脚本里的 `ninja -f build.ninja ...` 行，替换已有的 `-jN`/`-jobs N`/`-j N`（没有则插入 `-j <数量>`），生成的 pre/post 钩子不动；找不到 Ninja 命令时只警告、不改脚本。自定义 `cbpBuildManager.buildCommand` 不受改写影响，可用 `{jobs}` 占位符展开为 `-j <数量>`
+
+### Fixed
+- 修复构建日志把 stdout 与 stderr 的“半行”拼成一条假行的问题：编译器诊断分多次写入（源码行、只有 `^` 的 caret 行都不带换行符），构建脚本的进度文本（如 `"xxx.g.bin" successful`）和 `cmd.exe` 回显以裸 `\r` 结尾——两条流都会留下没有结束的半行，共用一个行缓冲时就会被拼成 `    sw a4, s9(a0)g.bin" successful`、`             ^\...\xcfg.h" successful` 这类在两个流里都不存在的行，既读不懂，caret 的列号也随之错位，还会被当成错误收集进诊断汇总
+- 输出行缓冲改为把 `\r`、`\n`、`\r\n` 都当行结束符，并新增 `StreamOutputBuffer` 让 stdout 与 stderr 各自持有独立缓冲（只在整行层面交错）：`\r` 刷新的进度行立即单独成行，不再等待后面某条无关输出带来的 `\n`；被数据块从中间切断的 CRLF 也不会多出一个空行
+
 ## [1.9.5] - 2026-10-08
 
 ### Added

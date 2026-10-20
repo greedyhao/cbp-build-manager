@@ -8,13 +8,14 @@
 - **多视图管理**：
   - **构建队列**：显示已选择的项目，支持拖放排序和复选框选择；项目行显示当前 Target 或“全部 Target (N)”状态，点击进入 CBP 图形化编辑器
   - **CBP 图形编辑器**：显示和管理 Unit 文件，支持添加已有文件、移出工程、切换当前 Target、切换构建全部 Target，编辑各 Target 及全局的 Compiler / Linker 配置项，以及以文本方式打开
-- **CBP 文件树与搜索**：工程文件按公共目录树展示；搜索支持路径/文件名部分匹配，按 Enter 定位到第一个匹配文件，方便确认或移出工程
   - **项目资源库**：按文件夹层级显示可用项目，自动隐藏已在队列中的项目。支持按芯片筛选显示项目，减少 project 的显示
+- **CBP 文件树与搜索**：工程文件按公共目录树展示；搜索支持路径/文件名部分匹配，按 Enter 定位到第一个匹配文件，方便确认或移出工程
 - **拖放操作**：在构建队列中拖动来控制构建顺序
 - **cbp2clangd 版本检查**：自动检查 cbp2clangd 版本，确保使用兼容版本
 - **Ninja 路径配置**：支持自动检查和更新 Ninja 路径
 - **可自定义命令**：配置 cbp2clangd 路径和构建脚本，路径含空格时自动加引号
-- **构建输出**：使用 Pseudoterminal 在终端中显示日志，支持 ANSI 控制符和彩色输出
+- **并行编译任务数**：`cbpBuildManager.maxParallelJobs`（默认 8，最小 1）；构建命令是 `build.bat` 时会自动把 `-j <数量>` 写进脚本里的 Ninja 命令，自定义构建命令可用 `{jobs}` 占位符
+- **构建输出**：使用 Pseudoterminal 在终端中显示日志，支持 ANSI 控制符和彩色输出；stdout 与 stderr 分别缓冲分行，`\r` 刷新的进度行不会和编译器诊断串成一行
 - **队列持久化**：构建队列自动保存到项目文件夹的 `.cbp-build/queue.json`，重启 VS Code 后自动恢复队列顺序和勾选状态
 - **Target 构建**：单 Target 模式按工程当前 Target 构建；启用“构建全部 Target”后按 CBP XML 中的顺序逐个构建，日志以 `[工程][Target]` 标识
 - **Target 状态持久化**：当前 Target 和“构建全部 Target”状态保存到 `.cbp-build/queue.json`
@@ -145,9 +146,10 @@ compilers:
 
 | 设置项 | 默认值 | 描述 |
 |--------|--------|------|
-| `cbpBuildManager.cbp2clangPath` | `cbp2clangd` | cbp2clangd 可执行文件的路径，可从 [GitHub](https://github.com/greedyhao/cbp2clangd) 下载 |
+| `cbpBuildManager.cbp2clangPath` | `cbp2clang` | cbp2clangd 可执行文件的路径，可从 [GitHub](https://github.com/greedyhao/cbp2clangd) 下载 |
 | `cbpBuildManager.convertCommand` | `{cbp2clang} {cbpFile} {compileCommands} {target} -l ld` | 转换命令模板；`{target}` 展开为 `--target <name>`，未配置该占位符的旧模板会自动追加 `--target`。所有路径变量展开时会自动加引号，支持含空格的路径 |
-| `cbpBuildManager.buildCommand` | `./build.bat` | 运行构建脚本的命令 |
+| `cbpBuildManager.buildCommand` | `./build.bat` | 运行构建脚本的命令；可用 `{jobs}` 占位符展开为 `-j <数量>` |
+| `cbpBuildManager.maxParallelJobs` | `8` | 最大并行编译任务数（Ninja `-j`），最小 1；构建命令是 `build.bat` 时会自动写入 `-j <数量>`（已有的 `-j` 会被替换） |
 | `cbpBuildManager.ninjaPath` | `""` | ninja 可执行文件的路径，含空格时同样会自动加引号 |
 | `cbpBuildManager.noHeaderInsertion` | `true`（manifest 默认值） | 禁止 clangd 在补全代码时插入头文件（需要 clangd v21+） |
 | `cbpBuildManager.debug` | `false` | 启用调试模式，显示详细的调试信息 |

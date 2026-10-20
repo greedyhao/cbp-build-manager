@@ -27,6 +27,7 @@ cbp-build-manager/
 │   ├── services/
 │   │   ├── DataManager.ts            # 队列、Target 状态、持久化
 │   │   ├── BuildService.ts            # build/rebuild/clean Target 执行计划
+│   │   ├── BuildConcurrency.ts        # Ninja -j 上限注入与 {jobs} 占位符
 │   │   ├── CbpProjectService.ts       # CBP Target/Unit 元数据读取
 │   │   ├── CompileCommandsMerger.ts   # 编译数据库合并
 │   │   └── index.ts
@@ -37,8 +38,8 @@ cbp-build-manager/
 │   │   ├── CbpEditorProvider.ts       # CBP 图形化 Custom Text Editor
 │   │   ├── cbpEditorUtils.ts           # Unit 公共根目录、树和搜索模型
 │   │   └── index.ts
-│   ├── terminal/                      # 伪终端和命令执行
-│   ├── utils/                         # 编码、版本、输出处理
+│   ├── terminal/                      # 伪终端、命令执行与输出分行
+│   ├── utils/                         # 编码、版本、输出行缓冲
 │   └── test/unit/                     # 单元测试
 ├── docs/                              # 文档
 ├── package.json                       # 扩展配置和贡献点
@@ -115,6 +116,13 @@ Target 列表来源：
 
 其中 `{target}` 展开为 `--target <name>`。用户旧模板未包含 `{target}` 时，扩展会自动在末尾追加 `--target <name>`。
 
+并行任务数（`cbpBuildManager.maxParallelJobs`，默认 8，最小 1）：
+
+- 构建命令是 `build.bat` 时，扩展在执行前改写该脚本里 `ninja ... -f build.ninja ...` 那一行的 `-j`：替换已有的 `-jN`/`-jobs N`/`-j N`，没有则插入；其余行（含生成的 pre/post 钩子）原样透传，单一换行风格（纯 CRLF 或纯 LF）逐字保留
+- 找不到 Ninja 命令时只输出警告、不改脚本
+- 边界行为：同一行出现多个 `-j` 时按“未找到 Ninja 命令”处理（只警告）；文件混用 CRLF/LF 时，改写会把全文换行统一成 CRLF
+- 自定义 `buildCommand` 不受上述改写影响，需要时用 `{jobs}` 占位符展开为 `-j <数量>`
+
 ### 4. CbpEditorProvider
 
 `.cbp` 文件通过 `CustomTextEditorProvider` 默认使用图形编辑器打开。编辑器底层仍使用 VS Code `TextDocument`，因此保存、dirty 状态、撤销/重做和外部变更由 VS Code 管理。
@@ -173,6 +181,16 @@ Compiler / Linker 配置编辑：
 - 支持复选框和拖放排序
 - 支持手动合并
 
+### 6. 构建输出终端（terminal/）
+
+构建命令以 `cmd.exe /d /c <命令>` 启动，输出写进一个 Pseudoterminal：
+
+- **按流分离缓冲**：stdout 与 stderr 各自持有一个 `OutputLineBuffer`（由 `StreamOutputBuffer` 持有）。两条管道的分块边界互不相干，共用一个缓冲时，一条流的半行会被拼到另一条流的半行前面，产出在两个流里都不存在的行（如 `    sw a4, s9(a0)g.bin" successful`、`             ^\...\xcfg.h" successful`），既读不懂，caret 的列号也随之错位，并会污染诊断汇总
+- **行结束符**：`\n`、`\r\n` 和裸 `\r` 都算行结束。构建脚本用 `\r` 原地刷新进度（如 `"xxx.g.bin" successful`），只认 `\n` 会让这类半行一直留到后面某条无关输出带来换行；CRLF 被数据块从中间切断时也不会多出一个空行
+- **进度行**：匹配 `[n/m] ...` 的行用 `\r\x1b[K` 原地刷新，不换行；能从命令里认出源文件时压缩成 `Building xxx.c` 形式的短信息，认不出时原样显示命令
+- **诊断汇总**：非进度行按错误/警告模式收集，路径经 `processBuildCommandPath` 转成绝对路径，便于在终端里按住 Ctrl 点击跳转
+- **停止构建**：Windows 上用 `taskkill /T /F` 结束整棵进程树，避免孙进程继续持有管道导致 `close` 事件不来
+
 ## 状态持久化
 
 文件：`.cbp-build/queue.json`
@@ -219,6 +237,7 @@ Target 选择和“构建全部 Target”不再作为构建队列行内菜单，
 | `cbpBuildManager.noHeaderInsertion` | boolean | true | 禁止 clangd 自动插入头文件，需要 clangd v21+ |
 | `cbpBuildManager.debug` | boolean | false | 启用调试模式 |
 | `cbpBuildManager.stopOnFailure` | boolean | true | Target 或项目失败时停止后续构建 |
+| `cbpBuildManager.maxParallelJobs` | number | 8 | 最大并行编译任务数（Ninja `-j`），最小 1；构建命令是 `build.bat` 时自动写入 `-j <数量>`，自定义命令用 `{jobs}` 占位符 |
 
 ## 测试策略
 
@@ -227,6 +246,7 @@ Target 选择和“构建全部 Target”不再作为构建队列行内菜单，
 - CbpEditorProvider：Unit 增删、格式保留和文本切换
 - Provider/Model：TreeView 节点和显示信息
 - Terminal/BuildService：命令执行、Target 顺序和失败行为
+- utils：输出行缓冲（`\r`/`\n`/`\r\n` 分行、跨数据块的 CRLF、stdout/stderr 按流分离不粘连）
 - Rust cbp2clangd：Target 解析、宏展开、生成器一致性和静态库链接名
 
 ## 已知限制
