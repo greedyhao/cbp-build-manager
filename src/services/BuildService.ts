@@ -1,3 +1,4 @@
+import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import { CbpDataManager } from "./DataManager";
@@ -8,6 +9,12 @@ import {
 } from "../terminal/TerminalManager";
 import { mergeCompileCommandsFiles } from "./index";
 import { quoteCmdArg } from "../utils";
+import {
+  applyNinjaJobLimitToBuildScript,
+  DEFAULT_MAX_PARALLEL_JOBS,
+  expandBuildJobsPlaceholder,
+  normalizeMaxParallelJobs,
+} from "./BuildConcurrency";
 
 interface BuildConfig {
   cbp2clangPath: string;
@@ -17,6 +24,7 @@ interface BuildConfig {
   noHeaderInsertion: boolean;
   debugMode: boolean;
   stopOnFailure: boolean;
+  maxParallelJobs: number;
 }
 
 interface Diagnostics {
@@ -44,6 +52,9 @@ export class BuildService {
       noHeaderInsertion: config.get<boolean>("noHeaderInsertion", false),
       debugMode: config.get<boolean>("debug", false),
       stopOnFailure: config.get<boolean>("stopOnFailure", false),
+      maxParallelJobs: normalizeMaxParallelJobs(
+        config.get<number>("maxParallelJobs", DEFAULT_MAX_PARALLEL_JOBS),
+      ),
     };
   }
 
@@ -228,6 +239,45 @@ export class BuildService {
     return convertCommand;
   }
 
+  private applyGeneratedBuildJobLimit(
+    projectDir: string,
+    cfg: BuildConfig,
+    terminal: { write: (s: string) => void },
+  ): void {
+    const buildCommand = cfg.buildScript
+      .trim()
+      .replace(/^["']|["']$/g, "");
+    if (!/^(?:\.?[\\/])?build\.bat$/i.test(buildCommand)) {
+      return;
+    }
+
+    const buildScriptPath = path.join(projectDir, "build.bat");
+    try {
+      const original = fs.readFileSync(buildScriptPath, "utf-8");
+      const result = applyNinjaJobLimitToBuildScript(
+        original,
+        cfg.maxParallelJobs,
+      );
+      if (!result.foundNinjaCommand) {
+        terminal.write(
+          `\x1b[33m[警告] 未能在 ${buildScriptPath} 中找到 Ninja 命令，无法应用并行任务上限。\x1b[0m\n`,
+        );
+        return;
+      }
+
+      if (result.content !== original) {
+        fs.writeFileSync(buildScriptPath, result.content, "utf-8");
+      }
+      terminal.write(
+        `最大并行编译任务数: ${cfg.maxParallelJobs}\n`,
+      );
+    } catch (error) {
+      terminal.write(
+        `\x1b[33m[警告] 无法更新生成的 Ninja 构建脚本: ${(error as Error).message}\x1b[0m\n`,
+      );
+    }
+  }
+
   private async convertAndBuild(
     project: { fsPath: string; label: string },
     target: string,
@@ -245,9 +295,14 @@ export class BuildService {
     terminal.write(`执行的转换命令: ${convertCommand}\n`);
     terminal.write(`\x1b[32m[1/2] 生成 Compile Commands...\x1b[0m\n`);
     await runCommand(convertCommand);
+    this.applyGeneratedBuildJobLimit(projectDir, cfg, terminal);
 
     terminal.write(`\x1b[32m[2/2] 执行构建脚本...\x1b[0m\n`);
-    await runCommandInDirectory(cfg.buildScript, projectDir, diagnostics);
+    const buildCommand = expandBuildJobsPlaceholder(
+      cfg.buildScript,
+      cfg.maxParallelJobs,
+    );
+    await runCommandInDirectory(buildCommand, projectDir, diagnostics);
   }
 
   private async convertOnly(

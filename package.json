@@ -205,7 +205,13 @@
         "cbpBuildManager.buildCommand": {
           "type": "string",
           "default": "./build.bat",
-          "description": "运行 cbp2clang 生成的构建脚本的命令"
+          "description": "运行 cbp2clangd 生成的构建脚本的命令；自定义命令可用 {jobs} 占位符展开为 -j <数量>"
+        },
+        "cbpBuildManager.maxParallelJobs": {
+          "type": "integer",
+          "default": 8,
+          "minimum": 1,
+          "description": "最大并行编译任务数（Ninja -j），默认 8，最小 1"
         },
         "cbpBuildManager.ninjaPath": {
           "type": "string",
